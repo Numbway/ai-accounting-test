@@ -23,7 +23,20 @@ export default function ExpenseInput({ onSuccess }: ExpenseInputProps) {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<ParseResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [inputMode, setInputMode] = useState<'text' | 'image'>('text')
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // 切换输入模式
+  const switchMode = (mode: 'text' | 'image') => {
+    console.log('Switching to mode:', mode)
+    setInputMode(mode)
+    setResult(null)
+    setError(null)
+    if (mode === 'text') {
+      setImage(null)
+      setPreview(null)
+    }
+  }
 
   // 文本解析
   const handleTextSubmit = async () => {
@@ -44,12 +57,56 @@ export default function ExpenseInput({ onSuccess }: ExpenseInputProps) {
     }
   }
 
-  // 图片上传预览
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // 图片选择
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) {
-      setImage(file)
-      setPreview(URL.createObjectURL(file))
+    if (!file) return
+
+    console.log('Selected file:', file.name, file.type, file.size)
+
+    // 检查文件类型
+    if (!file.type.startsWith('image/')) {
+      setError('请选择图片文件')
+      return
+    }
+
+    // 检查文件大小（5MB）
+    if (file.size > 5 * 1024 * 1024) {
+      setError('图片大小不能超过 5MB')
+      return
+    }
+
+    setImage(file)
+    setPreview(URL.createObjectURL(file))
+    setError(null)
+    
+    // 自动开始解析
+    await parseImage(file)
+  }
+
+  // 解析图片
+  const parseImage = async (file: File) => {
+    setLoading(true)
+    setError(null)
+    
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      
+      console.log('Sending image to API...')
+      const { data } = await axios.post('/api/ocr/receipt', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      })
+      
+      console.log('API response:', data)
+      setResult(data)
+    } catch (err: any) {
+      console.error('Parse error:', err)
+      setError(err.response?.data?.detail || '图片解析失败，请重试')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -59,8 +116,12 @@ export default function ExpenseInput({ onSuccess }: ExpenseInputProps) {
     
     setLoading(true)
     try {
+      // 转换日期为 ISO 格式
+      const dateObj = new Date(result.date)
+      const isoDate = dateObj.toISOString()
+      
       await axios.post('/api/expenses', {
-        date: result.date,
+        date: isoDate,
         amount: result.amount,
         category: result.category,
         category_full: result.category_full,
@@ -68,13 +129,11 @@ export default function ExpenseInput({ onSuccess }: ExpenseInputProps) {
         payment_method: result.payment_method,
         merchant: result.merchant,
         raw_input: result.raw_input,
-        source_type: 'text'
+        source_type: 'image'
       })
       
       // 重置状态
-      setText('')
-      setResult(null)
-      setError(null)
+      resetForm()
       onSuccess?.()
     } catch (err: any) {
       setError(err.response?.data?.detail || '保存失败')
@@ -83,70 +142,138 @@ export default function ExpenseInput({ onSuccess }: ExpenseInputProps) {
     }
   }
 
-  // 取消/重置
-  const handleCancel = () => {
+  // 重置表单
+  const resetForm = () => {
+    setText('')
     setResult(null)
     setError(null)
+    setImage(null)
+    setPreview(null)
+    setInputMode('text')
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
-    setImage(null)
-    setPreview(null)
   }
+
+  console.log('Current inputMode:', inputMode)
 
   return (
     <div className="space-y-4">
-      {/* 文本输入 */}
-      <div className="flex gap-2">
-        <input
-          type="text"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleTextSubmit()}
-          placeholder="花了20买了一斤肉"
-          className="flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500"
-        />
+      {/* 输入方式切换 */}
+      <div className="flex gap-2 bg-gray-100 p-1 rounded-lg">
         <button
-          onClick={handleTextSubmit}
-          disabled={loading || !text.trim()}
-          className="px-4 py-3 bg-blue-500 text-white rounded-lg font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
+          type="button"
+          onClick={() => switchMode('text')}
+          style={{
+            flex: 1,
+            padding: '8px 16px',
+            borderRadius: '6px',
+            fontSize: '14px',
+            fontWeight: 500,
+            border: 'none',
+            cursor: 'pointer',
+            backgroundColor: inputMode === 'text' ? '#fff' : 'transparent',
+            color: inputMode === 'text' ? '#2563eb' : '#4b5563',
+            boxShadow: inputMode === 'text' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+          }}
         >
-          解析
+          ✏️ 文字输入
+        </button>
+        <button
+          type="button"
+          onClick={() => switchMode('image')}
+          style={{
+            flex: 1,
+            padding: '8px 16px',
+            borderRadius: '6px',
+            fontSize: '14px',
+            fontWeight: 500,
+            border: 'none',
+            cursor: 'pointer',
+            backgroundColor: inputMode === 'image' ? '#fff' : 'transparent',
+            color: inputMode === 'image' ? '#2563eb' : '#4b5563',
+            boxShadow: inputMode === 'image' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+          }}
+        >
+          📷 拍照识别
         </button>
       </div>
 
-      {/* 图片上传按钮 */}
-      <div className="flex gap-2">
-        <label className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
-          <span>📷</span>
-          <span className="text-sm text-gray-600">上传小票</span>
+      {/* 文字输入模式 */}
+      {inputMode === 'text' && (
+        <div className="flex gap-2">
           <input
-            ref={fileInputRef}
-            type="file"
-            onChange={handleImageSelect}
-            hidden
-            accept="image/*"
+            type="text"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleTextSubmit()}
+            placeholder="花了20买了一斤肉"
+            className="flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500"
           />
-        </label>
-        
-        {image && (
-          <span className="flex items-center text-sm text-gray-500 py-2">
-            {image.name}
-          </span>
-        )}
-      </div>
+          <button
+            type="button"
+            onClick={handleTextSubmit}
+            disabled={loading || !text.trim()}
+            className="px-4 py-3 bg-blue-500 text-white rounded-lg font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
+          >
+            解析
+          </button>
+        </div>
+      )}
+
+      {/* 图片输入模式 */}
+      {inputMode === 'image' && (
+        <div className="space-y-3">
+          <label 
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '24px',
+              border: '2px dashed #d1d5db',
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }}
+          >
+            <span style={{ fontSize: '30px' }}>📷</span>
+            <span style={{ color: '#4b5563' }}>点击上传购物小票或订单截图</span>
+            <span style={{ fontSize: '12px', color: '#9ca3af' }}>支持 JPG、PNG 格式，最大 5MB</span>
+            <input
+              ref={fileInputRef}
+              type="file"
+              onChange={handleImageSelect}
+              style={{ display: 'none' }}
+              accept="image/*"
+            />
+          </label>
+        </div>
+      )}
 
       {/* 图片预览 */}
       {preview && (
-        <div className="relative inline-block">
+        <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
           <img 
             src={preview} 
             alt="预览" 
-            className="max-h-32 rounded-lg border"
+            style={{ maxHeight: '200px', margin: '0 auto', display: 'block', borderRadius: '8px', border: '1px solid #e5e7eb' }}
           />
           <button
-            onClick={handleCancel}
-            className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full text-sm"
+            type="button"
+            onClick={resetForm}
+            style={{
+              position: 'absolute',
+              top: '0',
+              right: '0',
+              width: '32px',
+              height: '32px',
+              backgroundColor: '#ef4444',
+              color: 'white',
+              borderRadius: '50%',
+              border: 'none',
+              fontSize: '18px',
+              cursor: 'pointer'
+            }}
           >
             ×
           </button>
@@ -157,7 +284,9 @@ export default function ExpenseInput({ onSuccess }: ExpenseInputProps) {
       {loading && (
         <div className="text-center py-4">
           <div className="inline-block animate-spin text-2xl">⏳</div>
-          <div className="text-gray-500 text-sm mt-1">AI 解析中...</div>
+          <div className="text-gray-500 text-sm mt-1">
+            {inputMode === 'image' ? 'AI 正在识别图片...' : 'AI 解析中...'}
+          </div>
         </div>
       )}
 
@@ -206,16 +335,18 @@ export default function ExpenseInput({ onSuccess }: ExpenseInputProps) {
 
           <div className="flex gap-2 mt-4">
             <button
+              type="button"
               onClick={handleConfirm}
               className="flex-1 py-2 bg-green-500 text-white rounded-lg font-medium hover:bg-green-600"
             >
               确认保存
             </button>
             <button
-              onClick={handleCancel}
+              type="button"
+              onClick={resetForm}
               className="flex-1 py-2 border border-gray-300 rounded-lg font-medium hover:bg-gray-50"
             >
-              修改
+              重新识别
             </button>
           </div>
         </div>

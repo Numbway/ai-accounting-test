@@ -159,18 +159,48 @@ def list_categories(db: Session = Depends(get_db)):
     return crud.get_categories(db)
 
 
-# ========== OCR API（预留）==========
+# ========== OCR API ==========
 
-@app.post("/api/ocr/receipt")
+@app.post("/api/ocr/receipt", response_model=schemas.AIParseResponse)
 async def parse_receipt(
     file: UploadFile = File(...)
 ):
-    """OCR 识别小票图片"""
-    # TODO: 实现完整的 OCR + AI 解析
-    content = await file.read()
-    # 这里可以接入百度OCR、腾讯OCR等
+    """
+    OCR 识别购物小票/订单截图
+    使用多模态 AI 模型（qwen-vl 或 gpt-4o）直接解析图片
+    """
+    import base64
     
-    return {"message": "OCR功能开发中", "filename": file.filename}
+    # 读取图片内容
+    content = await file.read()
+    
+    # 检查文件类型
+    if not file.content_type.startswith('image/'):
+        raise HTTPException(status_code=400, detail="只支持图片文件")
+    
+    # 检查文件大小（限制 5MB）
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="图片大小不能超过 5MB")
+    
+    # 转换为 base64
+    image_base64 = base64.b64encode(content).decode('utf-8')
+    
+    # 调用 AI 解析图片
+    result = parse_receipt_image(image_base64, file.filename)
+    
+    if "error" in result:
+        raise HTTPException(status_code=500, detail=result["error"])
+    
+    return schemas.AIParseResponse(
+        date=result["date"],
+        amount=result["amount"],
+        category=result["category"],
+        category_full=result.get("category_full", ""),
+        detail=result.get("detail", ""),
+        payment_method=result.get("payment_method", "other"),
+        merchant=result.get("merchant"),
+        raw_input=result["raw_input"]
+    )
 
 
 # ========== 导出 API ==========
