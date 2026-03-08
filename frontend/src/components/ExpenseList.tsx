@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import dayjs from 'dayjs'
-import CategoryIcon from './CategoryIcon'
+import ExpenseItem from './ExpenseItem'
 
 interface Expense {
   id: string
@@ -87,20 +87,9 @@ export default function ExpenseList() {
             {items.map((expense, idx) => (
               <div 
                 key={expense.id}
-                className={`flex items-center gap-3 p-4 ${idx !== items.length - 1 ? 'border-b border-gray-100' : ''}`}
+                className={idx !== items.length - 1 ? 'border-b border-gray-100' : ''}
               >
-                <CategoryIcon category={expense.category} size="md" />
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium truncate">
-                    {expense.detail || expense.category_full}
-                  </div>
-                  {expense.merchant && (
-                    <div className="text-sm text-gray-500">{expense.merchant}</div>
-                  )}
-                </div>
-                <div className="text-red-600 font-medium">
-                  -¥{expense.amount.toFixed(2)}
-                </div>
+                <ExpenseItem expense={expense} onUpdate={loadExpenses} />
               </div>
             ))}
           </div>
