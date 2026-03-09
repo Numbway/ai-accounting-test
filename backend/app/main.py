@@ -502,7 +502,7 @@ def import_csv(
                     raw_input=f"CSV导入: {row}",
                 )
                 
-                crud.create_expense(db, expense_data)
+                crud.create_expense(db, expense_data, current_user.id)
                 results["success"] += 1
                 
             except Exception as e:
