@@ -49,3 +49,14 @@ class Category(Base):
     icon = Column(String(20))
     color = Column(String(10))
     parent_id = Column(Integer, nullable=True)
+
+
+class Budget(Base):
+    __tablename__ = "budgets"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    year = Column(Integer, nullable=False)
+    month = Column(Integer, nullable=False)
+    amount = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

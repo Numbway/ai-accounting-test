@@ -23,12 +23,18 @@ def get_expenses(
     end_date: Optional[date] = None,
     category: Optional[str] = None
 ) -> List[models.Expense]:
+    from datetime import datetime, time
+    
     query = db.query(models.Expense)
     
     if start_date:
-        query = query.filter(models.Expense.date >= start_date)
+        # 开始日期设为当天 00:00:00
+        start_dt = datetime.combine(start_date, time.min)
+        query = query.filter(models.Expense.date >= start_dt)
     if end_date:
-        query = query.filter(models.Expense.date <= end_date)
+        # 结束日期设为当天 23:59:59.999999，确保包含整天
+        end_dt = datetime.combine(end_date, time.max)
+        query = query.filter(models.Expense.date <= end_dt)
     if category:
         query = query.filter(models.Expense.category == category)
     
@@ -145,3 +151,59 @@ def init_default_categories(db: Session):
             db.add(models.Category(**cat))
     
     db.commit()
+
+
+# ========== 预算 CRUD ==========
+def get_budget(db: Session, year: int, month: int) -> Optional[models.Budget]:
+    return db.query(models.Budget).filter(
+        models.Budget.year == year,
+        models.Budget.month == month
+    ).first()
+
+
+def create_or_update_budget(db: Session, budget: schemas.BudgetCreate) -> models.Budget:
+    existing = get_budget(db, budget.year, budget.month)
+    
+    if existing:
+        existing.amount = budget.amount
+        existing.updated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(existing)
+        return existing
+    else:
+        db_budget = models.Budget(**budget.model_dump())
+        db.add(db_budget)
+        db.commit()
+        db.refresh(db_budget)
+        return db_budget
+
+
+def get_budget_status(db: Session, year: int, month: int) -> schemas.BudgetStatus:
+    """获取预算执行情况"""
+    budget = get_budget(db, year, month)
+    budget_amount = budget.amount if budget else 0
+    
+    # 计算当月支出
+    start_date = datetime(year, month, 1)
+    if month == 12:
+        end_date = datetime(year + 1, 1, 1)
+    else:
+        end_date = datetime(year, month + 1, 1)
+    
+    total_spent = db.query(func.sum(models.Expense.amount)).filter(
+        models.Expense.date >= start_date,
+        models.Expense.date < end_date
+    ).scalar() or 0
+    
+    remaining = budget_amount - total_spent
+    percentage = (total_spent / budget_amount * 100) if budget_amount > 0 else 0
+    
+    return schemas.BudgetStatus(
+        year=year,
+        month=month,
+        budget_amount=budget_amount,
+        spent_amount=total_spent,
+        remaining_amount=remaining,
+        percentage=percentage,
+        is_over_budget=total_spent > budget_amount
+    )

@@ -215,18 +215,21 @@ def export_csv(
     import csv
     import io
     
-    start = datetime.fromisoformat(start_date) if start_date else None
-    end = datetime.fromisoformat(end_date) if end_date else None
+    # 解析日期字符串为 date 对象
+    start = datetime.fromisoformat(start_date).date() if start_date else None
+    end = datetime.fromisoformat(end_date).date() if end_date else None
     
     expenses = crud.get_expenses(
         db,
         skip=0,
         limit=10000,
-        start_date=start.date() if start else None,
-        end_date=end.date() if end else None
+        start_date=start,
+        end_date=end
     )
     
     output = io.StringIO()
+    # 写入 UTF-8 BOM，确保 Excel 正确识别中文
+    output.write('\ufeff')
     writer = csv.writer(output)
     writer.writerow(["日期", "金额", "类别", "详情", "支付方式", "商户", "备注"])
     
@@ -242,6 +245,20 @@ def export_csv(
         ])
     
     return {"csv": output.getvalue()}
+
+
+# ========== 预算 API ==========
+
+@app.get("/api/budget/{year}/{month}", response_model=schemas.BudgetStatus)
+def get_budget_status(year: int, month: int, db: Session = Depends(get_db)):
+    """获取预算执行情况"""
+    return crud.get_budget_status(db, year, month)
+
+
+@app.post("/api/budget", response_model=schemas.BudgetResponse)
+def set_budget(budget: schemas.BudgetCreate, db: Session = Depends(get_db)):
+    """设置预算"""
+    return crud.create_or_update_budget(db, budget)
 
 
 # ========== 健康检查 ==========

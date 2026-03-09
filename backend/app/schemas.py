@@ -92,3 +92,37 @@ class CategoryResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ========== 预算 Schema ==========
+class BudgetBase(BaseModel):
+    year: int
+    month: int
+    amount: float
+
+
+class BudgetCreate(BudgetBase):
+    pass
+
+
+class BudgetUpdate(BaseModel):
+    amount: float
+
+
+class BudgetResponse(BudgetBase):
+    id: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class BudgetStatus(BaseModel):
+    year: int
+    month: int
+    budget_amount: float
+    spent_amount: float
+    remaining_amount: float
+    percentage: float
+    is_over_budget: bool

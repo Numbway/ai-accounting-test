@@ -3,8 +3,10 @@ import ExpenseInput from './components/ExpenseInput'
 import ExpenseList from './components/ExpenseList'
 import Stats from './pages/Stats'
 import CategoryIcon from './components/CategoryIcon'
+import ExportData from './components/ExportData'
+import BudgetSetting from './components/BudgetSetting'
 
-type Tab = 'home' | 'list' | 'stats'
+type Tab = 'home' | 'list' | 'stats' | 'settings'
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('home')
@@ -16,7 +18,12 @@ function App() {
         <div className="max-w-md mx-auto px-4 py-3 flex items-center justify-between">
           <h1 className="text-xl font-bold text-gray-800">📋 AI 记账</h1>
           <div className="flex gap-2">
-            <button className="text-sm text-gray-500">设置</button>
+            <button 
+              onClick={() => setActiveTab('settings')}
+              className="text-sm text-gray-500 hover:text-gray-700 transition"
+            >
+              设置
+            </button>
           </div>
         </div>
       </header>
@@ -45,6 +52,13 @@ function App() {
         {activeTab === 'stats' && (
           <Stats />
         )}
+
+        {activeTab === 'settings' && (
+          <div className="space-y-4">
+            <ExportData />
+            <BudgetSetting />
+          </div>
+        )}
       </main>
 
       {/* 底部导航 */}
@@ -67,6 +81,12 @@ function App() {
             onClick={() => setActiveTab('stats')}
             icon="📊"
             label="统计"
+          />
+          <NavButton 
+            active={activeTab === 'settings'} 
+            onClick={() => setActiveTab('settings')}
+            icon="⚙️"
+            label="设置"
           />
         </div>
       </nav>
