@@ -112,9 +112,11 @@ class CategoryStats(BaseModel):
 class MonthlyStats(BaseModel):
     year: int
     month: int
-    total_amount: float
-    count: int
-    daily_avg: float
+    total_amount: float  # 总支出
+    total_income: float  # 总收入
+    net_amount: float    # 净收支（收入-支出）
+    count: int           # 支出笔数
+    daily_avg: float     # 日均支出
     categories: List[CategoryStats]
 
 

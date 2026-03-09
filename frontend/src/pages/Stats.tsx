@@ -251,18 +251,37 @@ export default function Stats() {
         </div>
       )}
 
-      {/* 总支出 */}
-      <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl p-6 text-white text-center">
-        <div className="text-sm opacity-80">
-          {activeTab === 'trend' ? getTimeRangeLabel() : '本月支出'}
+      {/* 收支总览 */}
+      <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl p-6 text-white">
+        <div className="text-sm opacity-80 text-center">
+          {activeTab === 'trend' ? getTimeRangeLabel() : '本月收支'}
         </div>
-        <div className="text-4xl font-bold mt-2">¥{stats.total_amount.toFixed(2)}</div>
-        <div className="flex justify-around mt-4 text-sm">
-          <div>
+        
+        {/* 净收支 */}
+        <div className="text-center mt-2">
+          <div className="text-4xl font-bold">
+            {stats.net_amount >= 0 ? '+' : ''}¥{Math.abs(stats.net_amount || 0).toFixed(2)}
+          </div>
+          <div className="text-sm opacity-80 mt-1">
+            {stats.net_amount >= 0 ? '净结余' : '净支出'}
+          </div>
+        </div>
+        
+        {/* 收入支出明细 */}
+        <div className="flex justify-around mt-4 pt-4 border-t border-white/20 text-sm">
+          <div className="text-center">
+            <div className="opacity-80">收入</div>
+            <div className="font-semibold text-green-300">+¥{(stats.total_income || 0).toFixed(2)}</div>
+          </div>
+          <div className="text-center">
+            <div className="opacity-80">支出</div>
+            <div className="font-semibold text-red-300">-¥{stats.total_amount.toFixed(2)}</div>
+          </div>
+          <div className="text-center">
             <div className="opacity-80">笔数</div>
             <div className="font-semibold">{stats.count}</div>
           </div>
-          <div>
+          <div className="text-center">
             <div className="opacity-80">日均</div>
             <div className="font-semibold">¥{stats.daily_avg.toFixed(2)}</div>
           </div>

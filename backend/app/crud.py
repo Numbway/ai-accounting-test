@@ -187,6 +187,8 @@ def get_monthly_stats(
         year=year,
         month=month,
         total_amount=total_expense,
+        total_income=total_income,
+        net_amount=total_income - total_expense,
         count=count,
         daily_avg=daily_avg,
         categories=categories
