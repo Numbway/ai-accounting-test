@@ -24,6 +24,7 @@ export default function ExpenseInput({ onSuccess }: ExpenseInputProps) {
   const [result, setResult] = useState<ParseResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [inputMode, setInputMode] = useState<'text' | 'image'>('text')
+  const [recordType, setRecordType] = useState<'expense' | 'income'>('expense')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 切换输入模式
@@ -38,6 +39,13 @@ export default function ExpenseInput({ onSuccess }: ExpenseInputProps) {
     }
   }
 
+  // 切换记录类型
+  const switchRecordType = (type: 'expense' | 'income') => {
+    setRecordType(type)
+    setResult(null)
+    setError(null)
+  }
+
   // 文本解析
   const handleTextSubmit = async () => {
     if (!text.trim()) return
@@ -46,9 +54,21 @@ export default function ExpenseInput({ onSuccess }: ExpenseInputProps) {
     setError(null)
     
     try {
+      // 根据收入/支出类型添加前缀提示
+      const inputWithType = recordType === 'income' 
+        ? `[收入] ${text}` 
+        : `[支出] ${text}`
+      
       const { data } = await api.post('/api/expenses/parse', {
-        input: text
+        input: inputWithType
       })
+      
+      // 如果是收入类型，强制设置类别为 income
+      if (recordType === 'income') {
+        data.category = 'income'
+        data.category_full = '收入'
+      }
+      
       setResult(data)
     } catch (err: any) {
       setError(err.response?.data?.detail || '解析失败，请重试')
@@ -101,6 +121,13 @@ export default function ExpenseInput({ onSuccess }: ExpenseInputProps) {
       })
       
       console.log('API response:', data)
+      
+      // 如果是收入类型，强制设置类别为 income
+      if (recordType === 'income') {
+        data.category = 'income'
+        data.category_full = '收入'
+      }
+      
       setResult(data)
     } catch (err: any) {
       console.error('Parse error:', err)
@@ -159,6 +186,32 @@ export default function ExpenseInput({ onSuccess }: ExpenseInputProps) {
 
   return (
     <div className="space-y-4">
+      {/* 收入/支出切换 */}
+      <div className="flex gap-2 bg-gray-100 p-1 rounded-lg">
+        <button
+          type="button"
+          onClick={() => switchRecordType('expense')}
+          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition ${
+            recordType === 'expense'
+              ? 'bg-white text-red-500 shadow-sm'
+              : 'text-gray-600'
+          }`}
+        >
+          💸 支出
+        </button>
+        <button
+          type="button"
+          onClick={() => switchRecordType('income')}
+          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition ${
+            recordType === 'income'
+              ? 'bg-white text-green-500 shadow-sm'
+              : 'text-gray-600'
+          }`}
+        >
+          💰 收入
+        </button>
+      </div>
+
       {/* 输入方式切换 */}
       <div className="flex gap-2 bg-gray-100 p-1 rounded-lg">
         <button
@@ -207,14 +260,16 @@ export default function ExpenseInput({ onSuccess }: ExpenseInputProps) {
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleTextSubmit()}
-            placeholder="花了20买了一斤肉"
+            placeholder={recordType === 'expense' ? "花了20买了一斤肉" : "工资收入5000元"}
             className="flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500"
           />
           <button
             type="button"
             onClick={handleTextSubmit}
             disabled={loading || !text.trim()}
-            className="px-4 py-3 bg-blue-500 text-white rounded-lg font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
+            className={`px-4 py-3 text-white rounded-lg font-medium disabled:bg-gray-300 disabled:cursor-not-allowed ${
+              recordType === 'income' ? 'bg-green-500' : 'bg-blue-500'
+            }`}
           >
             解析
           </button>
