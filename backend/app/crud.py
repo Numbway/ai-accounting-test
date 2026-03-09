@@ -132,6 +132,13 @@ def get_categories(db: Session) -> List[models.Category]:
     return db.query(models.Category).all()
 
 
+def get_category_by_name(db: Session, name: str) -> Optional[models.Category]:
+    """根据名称获取类别（支持 name 或 name_full 匹配）"""
+    return db.query(models.Category).filter(
+        (models.Category.name == name) | (models.Category.name_full == name)
+    ).first()
+
+
 def init_default_categories(db: Session):
     """初始化默认类别"""
     default_categories = [

@@ -4,6 +4,7 @@ import ExpenseList from './components/ExpenseList'
 import Stats from './pages/Stats'
 import CategoryIcon from './components/CategoryIcon'
 import ExportData from './components/ExportData'
+import ImportData from './components/ImportData'
 import BudgetSetting from './components/BudgetSetting'
 
 type Tab = 'home' | 'list' | 'stats' | 'settings'
@@ -55,6 +56,7 @@ function App() {
 
         {activeTab === 'settings' && (
           <div className="space-y-4">
+            <ImportData />
             <ExportData />
             <BudgetSetting />
           </div>

@@ -5,6 +5,7 @@ from datetime import datetime, date
 from typing import Optional, List
 import os
 from dotenv import load_dotenv
+from pydantic import BaseModel
 
 # 加载环境变量
 load_dotenv()
@@ -259,6 +260,122 @@ def get_budget_status(year: int, month: int, db: Session = Depends(get_db)):
 def set_budget(budget: schemas.BudgetCreate, db: Session = Depends(get_db)):
     """设置预算"""
     return crud.create_or_update_budget(db, budget)
+
+
+# ========== 导入 API ==========
+
+class ImportRequest(BaseModel):
+    csv_content: str
+    field_mapping: dict
+
+
+@app.post("/api/import/csv")
+def import_csv(request: ImportRequest, db: Session = Depends(get_db)):
+    """从 CSV 导入数据"""
+    import csv
+    import io
+    from datetime import datetime
+    
+    results = {"success": 0, "failed": 0, "errors": []}
+    
+    try:
+        # 处理 UTF-8 BOM
+        content = request.csv_content.lstrip('\ufeff')
+        reader = csv.DictReader(io.StringIO(content))
+        
+        mapping = request.field_mapping
+        
+        for idx, row in enumerate(reader, start=2):  # 从第2行开始（第1行是表头）
+            try:
+                # 获取映射的字段值
+                date_str = row.get(mapping.get('date', ''), '').strip()
+                amount_str = row.get(mapping.get('amount', ''), '').strip()
+                category = row.get(mapping.get('category', ''), '').strip()
+                detail = row.get(mapping.get('detail', ''), '').strip()
+                payment_method = row.get(mapping.get('payment_method', ''), '').strip()
+                merchant = row.get(mapping.get('merchant', ''), '').strip()
+                
+                # 验证必填字段
+                if not date_str or not amount_str or not category:
+                    results["failed"] += 1
+                    results["errors"].append(f"第 {idx} 行: 缺少必填字段")
+                    continue
+                
+                # 解析日期
+                date_parsed = None
+                for fmt in ['%Y-%m-%d', '%Y/%m/%d', '%m/%d/%Y', '%d/%m/%Y', '%Y-%m-%d %H:%M:%S']:
+                    try:
+                        date_parsed = datetime.strptime(date_str.split()[0], fmt)
+                        break
+                    except ValueError:
+                        continue
+                
+                if not date_parsed:
+                    results["failed"] += 1
+                    results["errors"].append(f"第 {idx} 行: 日期格式错误 '{date_str}'")
+                    continue
+                
+                # 解析金额
+                amount_str_clean = amount_str.replace(',', '').replace('¥', '').replace('$', '').strip()
+                try:
+                    amount = float(amount_str_clean)
+                except ValueError:
+                    results["failed"] += 1
+                    results["errors"].append(f"第 {idx} 行: 金额格式错误 '{amount_str}'")
+                    continue
+                
+                # 查找或创建类别
+                category_obj = crud.get_category_by_name(db, category)
+                if not category_obj:
+                    # 使用默认类别映射
+                    category_mapping = {
+                        '餐饮': 'food', '食物': 'food', '吃饭': 'food',
+                        '交通': 'transport', '出行': 'transport',
+                        '购物': 'shopping', '买东西': 'shopping',
+                        '居住': 'living', '房租': 'living', '住宿': 'living',
+                        '医疗': 'medical', '医药': 'medical', '看病': 'medical',
+                        '娱乐': 'entertainment', '休闲': 'entertainment',
+                        '收入': 'income', '工资': 'income',
+                    }
+                    category_key = category_mapping.get(category, 'other')
+                    category_obj = crud.get_category_by_name(db, category_key)
+                
+                category_key = category_obj.name if category_obj else 'other'
+                category_full = category_obj.name_full if category_obj else category
+                
+                # 标准化支付方式
+                payment_map = {
+                    'cash': 'cash', '现金': 'cash',
+                    'wechat': 'wechat', '微信': 'wechat', '微信支付': 'wechat',
+                    'alipay': 'alipay', '支付宝': 'alipay',
+                    'card': 'card', '银行卡': 'card', '信用卡': 'card', '借记卡': 'card',
+                }
+                payment_key = payment_map.get(payment_method.lower() if payment_method else '', 'other') if payment_method else 'other'
+                
+                # 创建支出记录
+                expense_data = schemas.ExpenseCreate(
+                    date=date_parsed,
+                    amount=abs(amount),
+                    category=category_key,
+                    category_full=category_full,
+                    detail=detail or None,
+                    payment_method=payment_key,
+                    merchant=merchant or None,
+                    source_type='import',
+                    raw_input=f"CSV导入: {row}",
+                )
+                
+                crud.create_expense(db, expense_data)
+                results["success"] += 1
+                
+            except Exception as e:
+                results["failed"] += 1
+                results["errors"].append(f"第 {idx} 行: {str(e)}")
+    
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"CSV解析失败: {str(e)}")
+    
+    return results
 
 
 # ========== 健康检查 ==========
