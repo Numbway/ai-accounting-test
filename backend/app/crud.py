@@ -144,20 +144,26 @@ def get_monthly_stats(
     else:
         end_date = datetime(year, month + 1, 1)
     
-    # 查询该月所有支出
+    # 查询该月所有记录
     expenses = db.query(models.Expense).filter(
         models.Expense.user_id == user_id,
         models.Expense.date >= start_date,
         models.Expense.date < end_date
     ).all()
     
-    total_amount = sum(e.amount for e in expenses)
-    count = len(expenses)
-    daily_avg = total_amount / 30 if total_amount > 0 else 0
+    # 区分收入和支出
+    expense_records = [e for e in expenses if e.category != 'income']
+    income_records = [e for e in expenses if e.category == 'income']
     
-    # 按类别分组
+    total_expense = sum(e.amount for e in expense_records)
+    total_income = sum(e.amount for e in income_records)
+    total_amount = total_expense  # 统计只显示支出
+    count = len(expense_records)
+    daily_avg = total_expense / 30 if total_expense > 0 else 0
+    
+    # 按类别分组（只统计支出类别）
     category_data = {}
-    for e in expenses:
+    for e in expense_records:
         key = e.category
         if key not in category_data:
             category_data[key] = {
@@ -171,7 +177,7 @@ def get_monthly_stats(
     
     categories = []
     for cat in category_data.values():
-        cat["percentage"] = (cat["total_amount"] / total_amount * 100) if total_amount > 0 else 0
+        cat["percentage"] = (cat["total_amount"] / total_expense * 100) if total_expense > 0 else 0
         categories.append(schemas.CategoryStats(**cat))
     
     # 按金额排序
@@ -180,7 +186,7 @@ def get_monthly_stats(
     return schemas.MonthlyStats(
         year=year,
         month=month,
-        total_amount=total_amount,
+        total_amount=total_expense,
         count=count,
         daily_avg=daily_avg,
         categories=categories
@@ -247,11 +253,11 @@ def create_or_update_budget(db: Session, user_id: str, budget: schemas.BudgetCre
 
 
 def get_budget_status(db: Session, user_id: str, year: int, month: int) -> schemas.BudgetStatus:
-    """获取预算执行情况"""
+    """获取预算执行情况（只计算支出，不包括收入）"""
     budget = get_budget(db, user_id, year, month)
     budget_amount = budget.amount if budget else 0
     
-    # 计算当月支出
+    # 计算当月支出（排除收入类别）
     start_date = datetime(year, month, 1)
     if month == 12:
         end_date = datetime(year + 1, 1, 1)
@@ -261,7 +267,8 @@ def get_budget_status(db: Session, user_id: str, year: int, month: int) -> schem
     total_spent = db.query(func.sum(models.Expense.amount)).filter(
         models.Expense.user_id == user_id,
         models.Expense.date >= start_date,
-        models.Expense.date < end_date
+        models.Expense.date < end_date,
+        models.Expense.category != 'income'  # 排除收入
     ).scalar() or 0
     
     remaining = budget_amount - total_spent

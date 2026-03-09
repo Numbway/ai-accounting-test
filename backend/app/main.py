@@ -531,7 +531,7 @@ def get_current_month_summary(
     else:
         end_date = date(now.year, now.month + 1, 1)
     
-    # 查询本月支出
+    # 查询本月所有记录
     expenses = crud.get_expenses(
         db,
         user_id=current_user.id,
@@ -540,14 +540,23 @@ def get_current_month_summary(
         limit=10000
     )
     
-    total_amount = sum(e.amount for e in expenses)
+    # 区分收入和支出
+    income_records = [e for e in expenses if e.category == 'income']
+    expense_records = [e for e in expenses if e.category != 'income']
+    
+    total_income = sum(e.amount for e in income_records)
+    total_expense = sum(e.amount for e in expense_records)
+    net_amount = total_income - total_expense  # 净收支
+    
     count = len(expenses)
+    expense_count = len(expense_records)
+    income_count = len(income_records)
     
-    # 计算日均支出
+    # 计算日均支出（只算支出）
     days_passed = now.day
-    daily_avg = total_amount / days_passed if days_passed > 0 else 0
+    daily_avg_expense = total_expense / days_passed if days_passed > 0 else 0
     
-    # 与上月对比
+    # 与上月对比（基于净收支）
     if now.month == 1:
         last_month_start = date(now.year - 1, 12, 1)
         last_month_end = date(now.year, 1, 1)
@@ -562,19 +571,25 @@ def get_current_month_summary(
         end_date=last_month_end,
         limit=10000
     )
-    last_month_total = sum(e.amount for e in last_month_expenses)
+    last_month_income = sum(e.amount for e in last_month_expenses if e.category == 'income')
+    last_month_expense = sum(e.amount for e in last_month_expenses if e.category != 'income')
+    last_month_net = last_month_income - last_month_expense
     
     month_over_month = 0
-    if last_month_total > 0:
-        month_over_month = ((total_amount - last_month_total) / last_month_total) * 100
+    if last_month_net != 0:
+        month_over_month = ((net_amount - last_month_net) / abs(last_month_net)) * 100
     
     return {
         "year": now.year,
         "month": now.month,
-        "total_amount": total_amount,
+        "total_income": total_income,
+        "total_expense": total_expense,
+        "net_amount": net_amount,
         "count": count,
-        "daily_avg": daily_avg,
-        "last_month_total": last_month_total,
+        "expense_count": expense_count,
+        "income_count": income_count,
+        "daily_avg_expense": daily_avg_expense,
+        "last_month_net": last_month_net,
         "month_over_month_change": round(month_over_month, 1),
     }
 
@@ -589,7 +604,7 @@ def get_smart_analysis(
     """获取智能分析报告"""
     now = datetime.now()
     
-    # 获取最近30天的支出
+    # 获取最近30天的所有记录
     last_30_days_start = now - __import__('datetime').timedelta(days=30)
     recent_expenses = crud.get_expenses(
         db,
@@ -599,24 +614,36 @@ def get_smart_analysis(
         limit=10000
     )
     
+    # 区分收入和支出
+    expense_records = [e for e in recent_expenses if e.category != 'income']
+    income_records = [e for e in recent_expenses if e.category == 'income']
+    
+    total_income = sum(e.amount for e in income_records)
+    total_expense = sum(e.amount for e in expense_records)
+    
     if not recent_expenses:
         return {
             "abnormal_expenses": [],
             "recurring_expenses": [],
             "suggestions": [],
-            "category_analysis": []
+            "category_analysis": [],
+            "summary": {
+                "total_income_30d": 0,
+                "total_expense_30d": 0,
+                "net_savings": 0
+            }
         }
     
-    # 1. 异常支出检测（超过日均3倍或单笔超过500元）
-    daily_totals = {}
-    for e in recent_expenses:
+    # 1. 异常支出检测（只检测支出，超过日均3倍或单笔超过500元）
+    daily_expense_totals = {}
+    for e in expense_records:
         day = e.date.strftime("%Y-%m-%d")
-        daily_totals[day] = daily_totals.get(day, 0) + e.amount
+        daily_expense_totals[day] = daily_expense_totals.get(day, 0) + e.amount
     
-    avg_daily = sum(daily_totals.values()) / len(daily_totals) if daily_totals else 0
+    avg_daily = sum(daily_expense_totals.values()) / len(daily_expense_totals) if daily_expense_totals else 0
     
     abnormal_expenses = []
-    for day, total in daily_totals.items():
+    for day, total in daily_expense_totals.items():
         if total > avg_daily * 3 and total > 100:
             abnormal_expenses.append({
                 "date": day,
@@ -625,7 +652,7 @@ def get_smart_analysis(
             })
     
     # 单笔大额支出
-    for e in recent_expenses:
+    for e in expense_records:
         if e.amount >= 500:
             abnormal_expenses.append({
                 "date": e.date.strftime("%Y-%m-%d"),
@@ -648,15 +675,15 @@ def get_smart_analysis(
     # 2. 重复支出识别（相同商户或详情，每月出现）
     from collections import Counter
     
-    merchant_counts = Counter([e.merchant for e in recent_expenses if e.merchant])
-    detail_counts = Counter([e.detail for e in recent_expenses if e.detail])
+    merchant_counts = Counter([e.merchant for e in expense_records if e.merchant])
+    detail_counts = Counter([e.detail for e in expense_records if e.detail])
     
     recurring_expenses = []
     
     # 识别可能的订阅/固定支出
     for merchant, count in merchant_counts.most_common(5):
         if count >= 2:
-            amounts = [e.amount for e in recent_expenses if e.merchant == merchant]
+            amounts = [e.amount for e in expense_records if e.merchant == merchant]
             avg_amount = sum(amounts) / len(amounts)
             recurring_expenses.append({
                 "type": "merchant",
@@ -669,14 +696,37 @@ def get_smart_analysis(
     # 3. 消费建议
     suggestions = []
     
-    # 按类别统计
+    # 按类别统计（只统计支出）
     category_totals = {}
-    for e in recent_expenses:
+    for e in expense_records:
         cat = e.category_full or e.category
         if cat not in category_totals:
             category_totals[cat] = {"total": 0, "count": 0}
         category_totals[cat]["total"] += e.amount
         category_totals[cat]["count"] += 1
+    
+    # 收支平衡建议
+    net_savings = total_income - total_expense
+    if total_income > 0:
+        savings_rate = (net_savings / total_income) * 100
+        if savings_rate < 0:
+            suggestions.append({
+                "type": "savings",
+                "message": f"近30天超支 ¥{abs(net_savings):.2f}",
+                "suggestion": "支出超过收入，建议控制消费"
+            })
+        elif savings_rate < 20:
+            suggestions.append({
+                "type": "savings",
+                "message": f"近30天储蓄率 {savings_rate:.1f}%",
+                "suggestion": "储蓄率偏低，建议增加储蓄"
+            })
+        else:
+            suggestions.append({
+                "type": "savings",
+                "message": f"近30天储蓄率 {savings_rate:.1f}%",
+                "suggestion": "储蓄习惯很好，继续保持！"
+            })
     
     # 找出消费最多的类别
     if category_totals:
@@ -688,22 +738,21 @@ def get_smart_analysis(
         })
     
     # 日均消费建议
-    total_30d = sum(e.amount for e in recent_expenses)
-    daily_avg_30d = total_30d / 30
-    if daily_avg_30d > 100:
+    daily_avg_expense = total_expense / 30
+    if daily_avg_expense > 100:
         suggestions.append({
             "type": "daily_avg",
-            "message": f"近30天日均支出 ¥{daily_avg_30d:.2f}",
+            "message": f"近30天日均支出 ¥{daily_avg_expense:.2f}",
             "suggestion": "日均消费较高，建议适当控制非必要支出"
         })
-    elif daily_avg_30d < 30:
+    elif daily_avg_expense < 30 and total_expense > 0:
         suggestions.append({
             "type": "daily_avg",
-            "message": f"近30天日均支出 ¥{daily_avg_30d:.2f}",
+            "message": f"近30天日均支出 ¥{daily_avg_expense:.2f}",
             "suggestion": "消费控制很好，继续保持！"
         })
     
-    # 4. 类别分析
+    # 4. 类别分析（只分析支出）
     category_analysis = []
     for cat, data in sorted(category_totals.items(), key=lambda x: x[1]["total"], reverse=True):
         category_analysis.append({
@@ -719,9 +768,12 @@ def get_smart_analysis(
         "suggestions": suggestions,
         "category_analysis": category_analysis[:5],
         "summary": {
-            "total_30d": total_30d,
-            "daily_avg_30d": round(daily_avg_30d, 2),
-            "transaction_count": len(recent_expenses)
+            "total_income_30d": total_income,
+            "total_expense_30d": total_expense,
+            "net_savings": net_savings,
+            "daily_avg_expense": round(daily_avg_expense, 2),
+            "expense_count": len(expense_records),
+            "income_count": len(income_records)
         }
     }
 
