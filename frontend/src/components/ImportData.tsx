@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import axios from 'axios'
+import api from '../lib/axios'
 
 interface ImportRecord {
   date: string
@@ -167,7 +167,7 @@ export default function ImportData() {
         const content = event.target?.result as string
         const cleanContent = content.replace(/^\uFEFF/, '')
 
-        const { data } = await axios.post('/api/import/csv', {
+        const { data } = await api.post('/api/import/csv', {
           csv_content: cleanContent,
           field_mapping: fieldMapping,
         })

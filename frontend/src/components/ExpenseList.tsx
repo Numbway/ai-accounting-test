@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import axios from 'axios'
+import api from '../lib/axios'
 import dayjs from 'dayjs'
 import ExpenseItem from './ExpenseItem'
 
@@ -27,7 +27,7 @@ export default function ExpenseList() {
   const loadExpenses = async () => {
     setLoading(true)
     try {
-      const { data } = await axios.get('/api/expenses', {
+      const { data } = await api.get('/api/expenses', {
         params: { skip: page * 20, limit: 20 }
       })
       setExpenses(data)

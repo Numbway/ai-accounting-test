@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import axios from 'axios'
+import api from '../lib/axios'
 
 interface AbnormalExpense {
   date: string
@@ -54,7 +54,7 @@ export default function SmartAnalysis() {
   const loadAnalysis = async () => {
     setLoading(true)
     try {
-      const { data } = await axios.get('/api/analysis/smart')
+      const { data } = await api.get('/api/analysis/smart')
       setAnalysis(data)
     } catch (err) {
       console.error('加载智能分析失败', err)

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import axios from 'axios'
+import api from '../lib/axios'
 
 interface BudgetStatus {
   year: number
@@ -30,7 +30,7 @@ export default function BudgetSetting() {
   const loadBudgetStatus = async () => {
     setLoading(true)
     try {
-      const { data } = await axios.get(`/api/budget/${year}/${month}`)
+      const { data } = await api.get(`/api/budget/${year}/${month}`)
       setStatus(data)
       if (data.budget_amount > 0) {
         setBudget(data.budget_amount)
@@ -48,7 +48,7 @@ export default function BudgetSetting() {
     setSuccess(false)
     
     try {
-      await axios.post('/api/budget', {
+      await api.post('/api/budget', {
         year,
         month,
         amount: budget

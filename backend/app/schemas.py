@@ -1,6 +1,42 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from datetime import datetime
 from typing import Optional, List
+
+
+# ========== 用户 Schema ==========
+class UserBase(BaseModel):
+    username: str
+    email: Optional[str] = None
+    display_name: Optional[str] = None
+
+
+class UserCreate(BaseModel):
+    username: str
+    password: str
+    email: Optional[str] = None
+    display_name: Optional[str] = None
+
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+
+class UserResponse(UserBase):
+    id: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class UserProfile(BaseModel):
+    id: str
+    username: str
+    display_name: Optional[str] = None
+    email: Optional[str] = None
+    avatar_url: Optional[str] = None
+    created_at: datetime
 
 
 # ========== 支出记录 Schema ==========

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Query
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Query, Header
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from datetime import datetime, date
@@ -6,6 +6,7 @@ from typing import Optional, List
 import os
 from dotenv import load_dotenv
 from pydantic import BaseModel
+import secrets
 
 # 加载环境变量
 load_dotenv()
@@ -28,6 +29,38 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ========== 认证相关 ==========
+
+def generate_token() -> str:
+    """生成随机 token"""
+    return secrets.token_urlsafe(32)
+
+
+# 简单的 token 存储（生产环境应使用 Redis）
+token_store = {}
+
+
+def get_current_user(
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+) -> models.User:
+    """从 token 获取当前用户"""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="未提供认证信息")
+    
+    # 支持 "Bearer token" 格式
+    token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+    
+    user_id = token_store.get(token)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="无效的 token")
+    
+    user = crud.get_user_by_id(db, user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="用户不存在")
+    
+    return user
+
 
 # ========== 初始化 ==========
 @app.on_event("startup")
@@ -37,21 +70,93 @@ def startup_event():
     crud.init_default_categories(db)
 
 
+# ========== 认证 API ==========
+
+@app.post("/api/auth/register")
+def register(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    """用户注册"""
+    # 检查用户名是否已存在
+    existing = crud.get_user_by_username(db, user.username)
+    if existing:
+        raise HTTPException(status_code=400, detail="用户名已存在")
+    
+    # 创建用户
+    db_user = crud.create_user(db, user)
+    
+    # 生成 token
+    token = generate_token()
+    token_store[token] = db_user.id
+    
+    return {
+        "user": {
+            "id": db_user.id,
+            "username": db_user.username,
+            "display_name": db_user.display_name,
+            "email": db_user.email
+        },
+        "token": token
+    }
+
+
+@app.post("/api/auth/login")
+def login(credentials: schemas.UserLogin, db: Session = Depends(get_db)):
+    """用户登录"""
+    user = crud.authenticate_user(db, credentials.username, credentials.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+    
+    # 生成 token
+    token = generate_token()
+    token_store[token] = user.id
+    
+    return {
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "display_name": user.display_name,
+            "email": user.email
+        },
+        "token": token
+    }
+
+
+@app.get("/api/auth/me")
+def get_me(current_user: models.User = Depends(get_current_user)):
+    """获取当前用户信息"""
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "display_name": current_user.display_name,
+        "email": current_user.email
+    }
+
+
+@app.post("/api/auth/logout")
+def logout(authorization: Optional[str] = Header(None)):
+    """用户登出"""
+    if authorization:
+        token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+        token_store.pop(token, None)
+    return {"message": "登出成功"}
+
+
 # ========== 支出记录 API ==========
 
 @app.post("/api/expenses", response_model=schemas.ExpenseResponse)
 def create_expense(
     expense: schemas.ExpenseCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
 ):
     """添加支出记录"""
-    return crud.create_expense(db, expense)
+    return crud.create_expense(db, expense, current_user.id)
 
 
 @app.post("/api/expenses/parse", response_model=schemas.AIParseResponse)
 def parse_and_create_expense(
     request: schemas.AITextParseRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
 ):
     """AI 解析文本并创建支出记录"""
     # AI 解析
@@ -74,7 +179,7 @@ def parse_and_create_expense(
     )
     
     # 创建记录
-    expense = crud.create_expense(db, expense_data)
+    expense = crud.create_expense(db, expense_data, current_user.id)
     
     # 返回解析结果（不是数据库对象）
     return schemas.AIParseResponse(
@@ -96,7 +201,8 @@ def list_expenses(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
 ):
     """获取支出记录列表"""
     start = datetime.fromisoformat(start_date) if start_date else None
@@ -104,6 +210,7 @@ def list_expenses(
     
     expenses = crud.get_expenses(
         db, 
+        user_id=current_user.id,
         skip=skip, 
         limit=limit,
         start_date=start.date() if start else None,
@@ -114,9 +221,13 @@ def list_expenses(
 
 
 @app.get("/api/expenses/{expense_id}", response_model=schemas.ExpenseResponse)
-def get_expense(expense_id: str, db: Session = Depends(get_db)):
+def get_expense(
+    expense_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
     """获取单条支出记录"""
-    expense = crud.get_expense_by_id(db, expense_id)
+    expense = crud.get_expense_by_id(db, expense_id, current_user.id)
     if not expense:
         raise HTTPException(status_code=404, detail="记录不存在")
     return expense
@@ -126,19 +237,24 @@ def get_expense(expense_id: str, db: Session = Depends(get_db)):
 def update_expense(
     expense_id: str,
     expense_update: schemas.ExpenseUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
 ):
     """更新支出记录"""
-    expense = crud.update_expense(db, expense_id, expense_update)
+    expense = crud.update_expense(db, expense_id, current_user.id, expense_update)
     if not expense:
         raise HTTPException(status_code=404, detail="记录不存在")
     return expense
 
 
 @app.delete("/api/expenses/{expense_id}")
-def delete_expense(expense_id: str, db: Session = Depends(get_db)):
+def delete_expense(
+    expense_id: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
     """删除支出记录"""
-    success = crud.delete_expense(db, expense_id)
+    success = crud.delete_expense(db, expense_id, current_user.id)
     if not success:
         raise HTTPException(status_code=404, detail="记录不存在")
     return {"message": "删除成功"}
@@ -147,9 +263,14 @@ def delete_expense(expense_id: str, db: Session = Depends(get_db)):
 # ========== 统计 API ==========
 
 @app.get("/api/stats/{year}/{month}", response_model=schemas.MonthlyStats)
-def get_monthly_stats(year: int, month: int, db: Session = Depends(get_db)):
+def get_monthly_stats(
+    year: int,
+    month: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
     """获取月度统计"""
-    return crud.get_monthly_stats(db, year, month)
+    return crud.get_monthly_stats(db, current_user.id, year, month)
 
 
 # ========== 类别 API ==========
@@ -164,7 +285,8 @@ def list_categories(db: Session = Depends(get_db)):
 
 @app.post("/api/ocr/receipt", response_model=schemas.AIParseResponse)
 async def parse_receipt(
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    current_user: models.User = Depends(get_current_user)
 ):
     """
     OCR 识别购物小票/订单截图
@@ -210,7 +332,8 @@ async def parse_receipt(
 def export_csv(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
 ):
     """导出 CSV"""
     import csv
@@ -222,6 +345,7 @@ def export_csv(
     
     expenses = crud.get_expenses(
         db,
+        user_id=current_user.id,
         skip=0,
         limit=10000,
         start_date=start,
@@ -251,15 +375,24 @@ def export_csv(
 # ========== 预算 API ==========
 
 @app.get("/api/budget/{year}/{month}", response_model=schemas.BudgetStatus)
-def get_budget_status(year: int, month: int, db: Session = Depends(get_db)):
+def get_budget_status(
+    year: int,
+    month: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
     """获取预算执行情况"""
-    return crud.get_budget_status(db, year, month)
+    return crud.get_budget_status(db, current_user.id, year, month)
 
 
 @app.post("/api/budget", response_model=schemas.BudgetResponse)
-def set_budget(budget: schemas.BudgetCreate, db: Session = Depends(get_db)):
+def set_budget(
+    budget: schemas.BudgetCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
     """设置预算"""
-    return crud.create_or_update_budget(db, budget)
+    return crud.create_or_update_budget(db, current_user.id, budget)
 
 
 # ========== 导入 API ==========
@@ -270,7 +403,11 @@ class ImportRequest(BaseModel):
 
 
 @app.post("/api/import/csv")
-def import_csv(request: ImportRequest, db: Session = Depends(get_db)):
+def import_csv(
+    request: ImportRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
     """从 CSV 导入数据"""
     import csv
     import io
@@ -381,7 +518,10 @@ def import_csv(request: ImportRequest, db: Session = Depends(get_db)):
 # ========== 月度概览 API ==========
 
 @app.get("/api/summary/current")
-def get_current_month_summary(db: Session = Depends(get_db)):
+def get_current_month_summary(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
     """获取当前月度概览"""
     now = datetime.now()
     start_date = date(now.year, now.month, 1)
@@ -394,6 +534,7 @@ def get_current_month_summary(db: Session = Depends(get_db)):
     # 查询本月支出
     expenses = crud.get_expenses(
         db,
+        user_id=current_user.id,
         start_date=start_date,
         end_date=end_date,
         limit=10000
@@ -416,6 +557,7 @@ def get_current_month_summary(db: Session = Depends(get_db)):
     
     last_month_expenses = crud.get_expenses(
         db,
+        user_id=current_user.id,
         start_date=last_month_start,
         end_date=last_month_end,
         limit=10000
@@ -440,7 +582,10 @@ def get_current_month_summary(db: Session = Depends(get_db)):
 # ========== 智能分析 API ==========
 
 @app.get("/api/analysis/smart")
-def get_smart_analysis(db: Session = Depends(get_db)):
+def get_smart_analysis(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
     """获取智能分析报告"""
     now = datetime.now()
     
@@ -448,6 +593,7 @@ def get_smart_analysis(db: Session = Depends(get_db)):
     last_30_days_start = now - __import__('datetime').timedelta(days=30)
     recent_expenses = crud.get_expenses(
         db,
+        user_id=current_user.id,
         start_date=last_30_days_start.date(),
         end_date=now.date(),
         limit=10000

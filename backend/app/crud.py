@@ -2,13 +2,66 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from typing import List, Optional
 from datetime import datetime, date
+import hashlib
+import secrets
 
 from . import models, schemas
 
 
+# ========== 用户认证相关 ==========
+def hash_password(password: str) -> str:
+    """使用 SHA-256 哈希密码（生产环境应使用 bcrypt）"""
+    salt = secrets.token_hex(16)
+    pwdhash = hashlib.sha256((password + salt).encode()).hexdigest()
+    return f"{salt}${pwdhash}"
+
+
+def verify_password(password: str, hashed: str) -> bool:
+    """验证密码"""
+    if "$" not in hashed:
+        return False
+    salt, stored_hash = hashed.split("$")
+    pwdhash = hashlib.sha256((password + salt).encode()).hexdigest()
+    return pwdhash == stored_hash
+
+
+def create_user(db: Session, user: schemas.UserCreate) -> models.User:
+    """创建用户"""
+    db_user = models.User(
+        username=user.username,
+        email=user.email,
+        password_hash=hash_password(user.password),
+        display_name=user.display_name or user.username
+    )
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+
+def get_user_by_username(db: Session, username: str) -> Optional[models.User]:
+    """根据用户名获取用户"""
+    return db.query(models.User).filter(models.User.username == username).first()
+
+
+def get_user_by_id(db: Session, user_id: str) -> Optional[models.User]:
+    """根据 ID 获取用户"""
+    return db.query(models.User).filter(models.User.id == user_id).first()
+
+
+def authenticate_user(db: Session, username: str, password: str) -> Optional[models.User]:
+    """验证用户登录"""
+    user = get_user_by_username(db, username)
+    if not user:
+        return None
+    if not verify_password(password, user.password_hash):
+        return None
+    return user
+
+
 # ========== 支出记录 CRUD ==========
-def create_expense(db: Session, expense: schemas.ExpenseCreate) -> models.Expense:
-    db_expense = models.Expense(**expense.model_dump())
+def create_expense(db: Session, expense: schemas.ExpenseCreate, user_id: str) -> models.Expense:
+    db_expense = models.Expense(**expense.model_dump(), user_id=user_id)
     db.add(db_expense)
     db.commit()
     db.refresh(db_expense)
@@ -17,6 +70,7 @@ def create_expense(db: Session, expense: schemas.ExpenseCreate) -> models.Expens
 
 def get_expenses(
     db: Session,
+    user_id: str,
     skip: int = 0,
     limit: int = 100,
     start_date: Optional[date] = None,
@@ -25,7 +79,7 @@ def get_expenses(
 ) -> List[models.Expense]:
     from datetime import datetime, time
     
-    query = db.query(models.Expense)
+    query = db.query(models.Expense).filter(models.Expense.user_id == user_id)
     
     if start_date:
         # 开始日期设为当天 00:00:00
@@ -41,16 +95,20 @@ def get_expenses(
     return query.order_by(desc(models.Expense.date)).offset(skip).limit(limit).all()
 
 
-def get_expense_by_id(db: Session, expense_id: str) -> Optional[models.Expense]:
-    return db.query(models.Expense).filter(models.Expense.id == expense_id).first()
+def get_expense_by_id(db: Session, expense_id: str, user_id: str) -> Optional[models.Expense]:
+    return db.query(models.Expense).filter(
+        models.Expense.id == expense_id,
+        models.Expense.user_id == user_id
+    ).first()
 
 
 def update_expense(
     db: Session, 
     expense_id: str, 
+    user_id: str,
     expense_update: schemas.ExpenseUpdate
 ) -> Optional[models.Expense]:
-    db_expense = get_expense_by_id(db, expense_id)
+    db_expense = get_expense_by_id(db, expense_id, user_id)
     if not db_expense:
         return None
     
@@ -64,8 +122,8 @@ def update_expense(
     return db_expense
 
 
-def delete_expense(db: Session, expense_id: str) -> bool:
-    db_expense = get_expense_by_id(db, expense_id)
+def delete_expense(db: Session, expense_id: str, user_id: str) -> bool:
+    db_expense = get_expense_by_id(db, expense_id, user_id)
     if not db_expense:
         return False
     db.delete(db_expense)
@@ -76,6 +134,7 @@ def delete_expense(db: Session, expense_id: str) -> bool:
 # ========== 统计 CRUD ==========
 def get_monthly_stats(
     db: Session, 
+    user_id: str,
     year: int, 
     month: int
 ) -> schemas.MonthlyStats:
@@ -87,6 +146,7 @@ def get_monthly_stats(
     
     # 查询该月所有支出
     expenses = db.query(models.Expense).filter(
+        models.Expense.user_id == user_id,
         models.Expense.date >= start_date,
         models.Expense.date < end_date
     ).all()
@@ -161,15 +221,16 @@ def init_default_categories(db: Session):
 
 
 # ========== 预算 CRUD ==========
-def get_budget(db: Session, year: int, month: int) -> Optional[models.Budget]:
+def get_budget(db: Session, user_id: str, year: int, month: int) -> Optional[models.Budget]:
     return db.query(models.Budget).filter(
+        models.Budget.user_id == user_id,
         models.Budget.year == year,
         models.Budget.month == month
     ).first()
 
 
-def create_or_update_budget(db: Session, budget: schemas.BudgetCreate) -> models.Budget:
-    existing = get_budget(db, budget.year, budget.month)
+def create_or_update_budget(db: Session, user_id: str, budget: schemas.BudgetCreate) -> models.Budget:
+    existing = get_budget(db, user_id, budget.year, budget.month)
     
     if existing:
         existing.amount = budget.amount
@@ -178,16 +239,16 @@ def create_or_update_budget(db: Session, budget: schemas.BudgetCreate) -> models
         db.refresh(existing)
         return existing
     else:
-        db_budget = models.Budget(**budget.model_dump())
+        db_budget = models.Budget(**budget.model_dump(), user_id=user_id)
         db.add(db_budget)
         db.commit()
         db.refresh(db_budget)
         return db_budget
 
 
-def get_budget_status(db: Session, year: int, month: int) -> schemas.BudgetStatus:
+def get_budget_status(db: Session, user_id: str, year: int, month: int) -> schemas.BudgetStatus:
     """获取预算执行情况"""
-    budget = get_budget(db, year, month)
+    budget = get_budget(db, user_id, year, month)
     budget_amount = budget.amount if budget else 0
     
     # 计算当月支出
@@ -198,6 +259,7 @@ def get_budget_status(db: Session, year: int, month: int) -> schemas.BudgetStatu
         end_date = datetime(year, month + 1, 1)
     
     total_spent = db.query(func.sum(models.Expense.amount)).filter(
+        models.Expense.user_id == user_id,
         models.Expense.date >= start_date,
         models.Expense.date < end_date
     ).scalar() or 0

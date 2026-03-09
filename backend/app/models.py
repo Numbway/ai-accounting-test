@@ -1,5 +1,6 @@
-from sqlalchemy import Column, String, DateTime, Text, Float, Integer, Enum
+from sqlalchemy import Column, String, DateTime, Text, Float, Integer, Enum, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
 import uuid
 from datetime import datetime
 import enum
@@ -20,10 +21,29 @@ class PaymentMethod(str, enum.Enum):
     OTHER = "other"
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    username = Column(String(50), unique=True, nullable=False, index=True)
+    email = Column(String(100), unique=True, nullable=True)
+    password_hash = Column(String(255), nullable=False)
+    display_name = Column(String(100), nullable=True)
+    avatar_url = Column(String(500), nullable=True)
+    is_active = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # 关系
+    expenses = relationship("Expense", back_populates="user", cascade="all, delete-orphan")
+    budgets = relationship("Budget", back_populates="user", cascade="all, delete-orphan")
+
+
 class Expense(Base):
     __tablename__ = "expenses"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
     date = Column(DateTime, default=datetime.utcnow)
     amount = Column(Float, nullable=False)
     category = Column(String(50), nullable=False)
@@ -38,6 +58,9 @@ class Expense(Base):
     image_url = Column(String(500))
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # 关系
+    user = relationship("User", back_populates="expenses")
 
 
 class Category(Base):
@@ -55,8 +78,12 @@ class Budget(Base):
     __tablename__ = "budgets"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
     year = Column(Integer, nullable=False)
     month = Column(Integer, nullable=False)
     amount = Column(Float, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # 关系
+    user = relationship("User", back_populates="budgets")

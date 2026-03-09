@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import axios from 'axios'
+import api from '../lib/axios'
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip,
   LineChart, Line, XAxis, YAxis, CartesianGrid, BarChart, Bar
@@ -61,12 +61,12 @@ export default function Stats() {
     setLoading(true)
     try {
       // 加载统计数据
-      const { data: statsData } = await axios.get(`/api/stats/${year}/${month}`)
+      const { data: statsData } = await api.get(`/api/stats/${year}/${month}`)
       setStats(statsData)
 
       // 加载预算数据
       try {
-        const { data: budgetData } = await axios.get(`/api/budget/${year}/${month}`)
+        const { data: budgetData } = await api.get(`/api/budget/${year}/${month}`)
         setBudget(budgetData)
       } catch {
         setBudget(null)
@@ -110,7 +110,7 @@ export default function Stats() {
         limit: 1000,
       }
 
-      const { data: expenses } = await axios.get('/api/expenses', { params })
+      const { data: expenses } = await api.get('/api/expenses', { params })
 
       // 按日期聚合
       const dailyMap = new Map<string, number>()

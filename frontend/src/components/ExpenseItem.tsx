@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import axios from 'axios'
+import api from '../lib/axios'
 import CategoryIcon, { getCategoryName } from './CategoryIcon'
 
 interface Expense {
@@ -52,7 +52,7 @@ export default function ExpenseItem({ expense, onUpdate }: ExpenseItemProps) {
     setError(null)
     
     try {
-      await axios.put(`/api/expenses/${expense.id}`, {
+      await api.put(`/api/expenses/${expense.id}`, {
         amount: parseFloat(formData.amount.toString()),
         category: formData.category,
         detail: formData.detail,
@@ -75,7 +75,7 @@ export default function ExpenseItem({ expense, onUpdate }: ExpenseItemProps) {
     setLoading(true)
     
     try {
-      await axios.delete(`/api/expenses/${expense.id}`)
+      await api.delete(`/api/expenses/${expense.id}`)
       setIsDeleting(false)
       onUpdate()
     } catch (err: any) {

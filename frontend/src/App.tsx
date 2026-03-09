@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import axios from 'axios'
+import api from './lib/axios'
+import { useAuthStore } from './stores/authStore'
 import ExpenseInput from './components/ExpenseInput'
 import ExpenseList from './components/ExpenseList'
 import Stats from './pages/Stats'
@@ -7,19 +8,63 @@ import CategoryIcon from './components/CategoryIcon'
 import ExportData from './components/ExportData'
 import ImportData from './components/ImportData'
 import BudgetSetting from './components/BudgetSetting'
+import AuthModal from './components/AuthModal'
 
 type Tab = 'home' | 'list' | 'stats' | 'settings'
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('home')
+  const [showAuthModal, setShowAuthModal] = useState(false)
+  const { isAuthenticated, user, logout } = useAuthStore()
+
+  // 监听认证事件
+  useEffect(() => {
+    const handleAuthRequired = () => setShowAuthModal(true)
+    window.addEventListener('auth:required', handleAuthRequired)
+    return () => window.removeEventListener('auth:required', handleAuthRequired)
+  }, [])
+
+  // 如果未登录，显示登录弹窗
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setShowAuthModal(true)
+    }
+  }, [isAuthenticated])
 
   return (
     <div className="min-h-screen bg-gray-100">
+      {/* 登录弹窗 */}
+      <AuthModal 
+        isOpen={showAuthModal} 
+        onClose={() => {
+          setShowAuthModal(false)
+          // 如果关闭时仍未登录，保持打开
+          if (!isAuthenticated) {
+            setShowAuthModal(true)
+          }
+        }} 
+      />
+
       {/* 顶部导航 */}
       <header className="bg-white shadow-sm">
         <div className="max-w-md mx-auto px-4 py-3 flex items-center justify-between">
           <h1 className="text-xl font-bold text-gray-800">📋 AI 记账</h1>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            {isAuthenticated && user && (
+              <span className="text-xs text-gray-500">👤 {user.display_name || user.username}</span>
+            )}
+            {isAuthenticated && (
+              <button 
+                onClick={() => {
+                  logout()
+                  api.post('/api/auth/logout').catch(() => {})
+                  setShowAuthModal(true)
+                }}
+                className="text-xs text-gray-400 hover:text-red-500"
+              >
+                退出
+              </button>
+            )}
             <button 
               onClick={() => setActiveTab('settings')}
               className="text-sm text-gray-500 hover:text-gray-700 transition"
@@ -31,7 +76,7 @@ function App() {
       </header>
 
       {/* 主内容区 */}
-      <main className="max-w-md mx-auto px-4 py-4">
+      <main className="max-w-md mx-auto px-4 py-4 pb-24">
         {activeTab === 'home' && (
           <div className="space-y-4">
             {/* 快速记账 */}
@@ -106,16 +151,19 @@ function MonthlySummary() {
     month_over_month_change: 0,
     loading: true
   })
+  const { isAuthenticated } = useAuthStore()
   
   const currentMonth = new Date().toLocaleString('zh-CN', { year: 'numeric', month: 'long' })
   
   useEffect(() => {
-    loadSummary()
-  }, [])
+    if (isAuthenticated) {
+      loadSummary()
+    }
+  }, [isAuthenticated])
   
   const loadSummary = async () => {
     try {
-      const { data } = await axios.get('/api/summary/current')
+      const { data } = await api.get('/api/summary/current')
       setSummary({
         total_amount: data.total_amount,
         count: data.count,
@@ -127,6 +175,15 @@ function MonthlySummary() {
       console.error('加载概览失败', err)
       setSummary(prev => ({ ...prev, loading: false }))
     }
+  }
+  
+  if (!isAuthenticated) {
+    return (
+      <div className="bg-gradient-to-r from-gray-400 to-gray-500 rounded-xl p-4 text-white text-center">
+        <div className="text-sm opacity-80">请先登录</div>
+        <div className="text-lg mt-2">查看您的月度概览</div>
+      </div>
+    )
   }
   
   if (summary.loading) {

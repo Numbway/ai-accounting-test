@@ -13,27 +13,40 @@ logger = logging.getLogger(__name__)
 # ========== API 配置 ==========
 AI_PROVIDER = os.getenv("AI_PROVIDER", "openai").lower()
 
-if AI_PROVIDER == "aliyun":
-    client = OpenAI(
-        api_key=os.getenv("DASHSCOPE_API_KEY", ""),
-        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
-    )
-    # Qwen-VL 支持图片的多模态模型
-    DEFAULT_MODEL = os.getenv("AI_MODEL", "qwen-vl-plus")
-    DEFAULT_VL_MODEL = "qwen-vl-plus"
-elif AI_PROVIDER == "deepseek":
-    client = OpenAI(
-        api_key=os.getenv("DEEPSEEK_API_KEY", ""),
-        base_url="https://api.deepseek.com/v1"
-    )
-    DEFAULT_MODEL = os.getenv("AI_MODEL", "deepseek-chat")
-    DEFAULT_VL_MODEL = "deepseek-chat"
-else:
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
-    DEFAULT_MODEL = os.getenv("AI_MODEL", "gpt-4o-mini")
-    DEFAULT_VL_MODEL = "gpt-4o"
+def get_openai_client():
+    """获取 OpenAI 客户端（每次都重新读取环境变量）"""
+    if AI_PROVIDER == "aliyun":
+        return OpenAI(
+            api_key=os.getenv("DASHSCOPE_API_KEY", ""),
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+        )
+    elif AI_PROVIDER == "deepseek":
+        return OpenAI(
+            api_key=os.getenv("DEEPSEEK_API_KEY", ""),
+            base_url="https://api.deepseek.com/v1"
+        )
+    else:
+        return OpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 
-logger.info(f"AI Provider: {AI_PROVIDER}, Model: {DEFAULT_MODEL}, VL Model: {DEFAULT_VL_MODEL}")
+def get_default_model():
+    """获取默认模型"""
+    if AI_PROVIDER == "aliyun":
+        return os.getenv("AI_MODEL", "qwen-vl-plus")
+    elif AI_PROVIDER == "deepseek":
+        return os.getenv("AI_MODEL", "deepseek-chat")
+    else:
+        return os.getenv("AI_MODEL", "gpt-4o-mini")
+
+def get_default_vl_model():
+    """获取默认视觉模型"""
+    if AI_PROVIDER == "aliyun":
+        return "qwen-vl-plus"
+    elif AI_PROVIDER == "deepseek":
+        return "deepseek-chat"
+    else:
+        return "gpt-4o"
+
+logger.info(f"AI Provider: {AI_PROVIDER}")
 
 
 # ========== 默认类别映射 ==========
@@ -89,8 +102,9 @@ def parse_expense_text(user_input: str) -> dict:
     logger.info(f"Parsing text input: {user_input}")
     
     try:
+        client = get_openai_client()
         response = client.chat.completions.create(
-            model=DEFAULT_MODEL,
+            model=get_default_model(),
             messages=[
                 {"role": "system", "content": EXPENSE_PARSE_SYSTEM_PROMPT},
                 {"role": "user", "content": f"今天日期是 {today}。用户输入：{user_input}"}
@@ -170,8 +184,9 @@ def parse_receipt_image(image_base64: str, filename: str = "image.jpg") -> dict:
             }
         ]
         
+        client = get_openai_client()
         response = client.chat.completions.create(
-            model=DEFAULT_VL_MODEL,
+            model=get_default_vl_model(),
             messages=messages,
             temperature=0,
             max_tokens=1000

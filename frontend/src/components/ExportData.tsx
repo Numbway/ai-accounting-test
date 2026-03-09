@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import axios from 'axios'
+import api from '../lib/axios'
 
 export default function ExportData() {
   const [loading, setLoading] = useState(false)
@@ -22,7 +22,7 @@ export default function ExportData() {
         params.end_date = new Date(dateRange.endDate).toISOString()
       }
       
-      const { data } = await axios.get('/api/export/csv', { params })
+      const { data } = await api.get('/api/export/csv', { params })
       
       // 创建下载链接
       const blob = new Blob([data.csv], { type: 'text/csv;charset=utf-8;' })

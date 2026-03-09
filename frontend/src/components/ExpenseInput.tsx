@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import axios from 'axios'
+import api from '../lib/axios'
 
 interface ParseResult {
   date: string
@@ -46,7 +46,7 @@ export default function ExpenseInput({ onSuccess }: ExpenseInputProps) {
     setError(null)
     
     try {
-      const { data } = await axios.post('/api/expenses/parse', {
+      const { data } = await api.post('/api/expenses/parse', {
         input: text
       })
       setResult(data)
@@ -94,7 +94,7 @@ export default function ExpenseInput({ onSuccess }: ExpenseInputProps) {
       formData.append('file', file)
       
       console.log('Sending image to API...')
-      const { data } = await axios.post('/api/ocr/receipt', formData, {
+      const { data } = await api.post('/api/ocr/receipt', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
@@ -120,7 +120,7 @@ export default function ExpenseInput({ onSuccess }: ExpenseInputProps) {
       const dateObj = new Date(result.date)
       const isoDate = dateObj.toISOString()
       
-      await axios.post('/api/expenses', {
+      await api.post('/api/expenses', {
         date: isoDate,
         amount: result.amount,
         category: result.category,
