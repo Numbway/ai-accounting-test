@@ -145,9 +145,11 @@ function App() {
 // 月度概览组件
 function MonthlySummary() {
   const [summary, setSummary] = useState({
-    total_amount: 0,
+    total_income: 0,
+    total_expense: 0,
+    net_amount: 0,
     count: 0,
-    daily_avg: 0,
+    daily_avg_expense: 0,
     month_over_month_change: 0,
     loading: true
   })
@@ -165,10 +167,12 @@ function MonthlySummary() {
     try {
       const { data } = await api.get('/api/summary/current')
       setSummary({
-        total_amount: data.total_amount,
-        count: data.count,
-        daily_avg: data.daily_avg,
-        month_over_month_change: data.month_over_month_change,
+        total_income: data.total_income || 0,
+        total_expense: data.total_expense || 0,
+        net_amount: data.net_amount || 0,
+        count: data.expense_count || 0,
+        daily_avg_expense: data.daily_avg_expense || 0,
+        month_over_month_change: data.month_over_month_change || 0,
         loading: false
       })
     } catch (err) {
@@ -204,16 +208,35 @@ function MonthlySummary() {
         <div className="text-sm opacity-80">{currentMonth}</div>
         {summary.month_over_month_change !== 0 && (
           <div className={`text-xs px-2 py-1 rounded-full ${
-            summary.month_over_month_change > 0 ? 'bg-red-400' : 'bg-green-400'
+            summary.net_amount >= 0 ? 'bg-green-400' : 'bg-red-400'
           }`}>
-            {summary.month_over_month_change > 0 ? '↑' : '↓'} {Math.abs(summary.month_over_month_change).toFixed(1)}%
+            {summary.net_amount >= 0 ? '↑' : '↓'} {Math.abs(summary.month_over_month_change).toFixed(1)}%
           </div>
         )}
       </div>
-      <div className="text-3xl font-bold mt-1">¥{summary.total_amount.toFixed(2)}</div>
-      <div className="flex justify-between mt-2 text-sm opacity-80">
-        <span>共 {summary.count} 笔支出</span>
-        <span>日均 ¥{summary.daily_avg.toFixed(2)}</span>
+      
+      {/* 净收支 */}
+      <div className="text-3xl font-bold mt-1">
+        {summary.net_amount >= 0 ? '+' : ''}¥{summary.net_amount.toFixed(2)}
+      </div>
+      <div className="text-sm opacity-80 mt-1">
+        {summary.net_amount >= 0 ? '净结余' : '净支出'}
+      </div>
+      
+      {/* 收入支出明细 */}
+      <div className="flex justify-between mt-3 pt-3 border-t border-white/20 text-sm">
+        <div className="text-center">
+          <div className="opacity-80">收入</div>
+          <div className="font-semibold text-green-300">+¥{summary.total_income.toFixed(2)}</div>
+        </div>
+        <div className="text-center">
+          <div className="opacity-80">支出</div>
+          <div className="font-semibold text-red-300">-¥{summary.total_expense.toFixed(2)}</div>
+        </div>
+        <div className="text-center">
+          <div className="opacity-80">日均</div>
+          <div className="font-semibold">¥{summary.daily_avg_expense.toFixed(2)}</div>
+        </div>
       </div>
     </div>
   )
