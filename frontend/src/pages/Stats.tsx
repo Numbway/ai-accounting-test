@@ -4,6 +4,7 @@ import {
   PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip,
   LineChart, Line, XAxis, YAxis, CartesianGrid, BarChart, Bar
 } from 'recharts'
+import SmartAnalysis from '../components/SmartAnalysis'
 
 interface CategoryStat {
   category: string
@@ -50,7 +51,7 @@ export default function Stats() {
   const [dailyData, setDailyData] = useState<DailyData[]>([])
   const [budget, setBudget] = useState<BudgetStatus | null>(null)
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview' | 'trend'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'trend' | 'analysis'>('overview')
 
   useEffect(() => {
     loadData()
@@ -206,6 +207,14 @@ export default function Stats() {
           }`}
         >
           📈 趋势
+        </button>
+        <button
+          onClick={() => setActiveTab('analysis')}
+          className={`flex-1 py-2 text-sm font-medium rounded-lg transition ${
+            activeTab === 'analysis' ? 'bg-blue-50 text-blue-600' : 'text-gray-500'
+          }`}
+        >
+          🤖 分析
         </button>
       </div>
 
@@ -378,6 +387,11 @@ export default function Stats() {
               该时间段暂无数据
             </div>
           )}
+        </div>
+      )}
+
+      {/* 智能分析内容 */}
+      {activeTab === 'analysis' && <SmartAnalysis />}
         </div>
       )}
     </div>

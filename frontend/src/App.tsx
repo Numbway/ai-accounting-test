@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import axios from 'axios'
 import ExpenseInput from './components/ExpenseInput'
 import ExpenseList from './components/ExpenseList'
 import Stats from './pages/Stats'
@@ -98,15 +99,65 @@ function App() {
 
 // 月度概览组件
 function MonthlySummary() {
-  const [summary] = useState({ total: 520, count: 12 })
+  const [summary, setSummary] = useState({
+    total_amount: 0,
+    count: 0,
+    daily_avg: 0,
+    month_over_month_change: 0,
+    loading: true
+  })
   
   const currentMonth = new Date().toLocaleString('zh-CN', { year: 'numeric', month: 'long' })
   
+  useEffect(() => {
+    loadSummary()
+  }, [])
+  
+  const loadSummary = async () => {
+    try {
+      const { data } = await axios.get('/api/summary/current')
+      setSummary({
+        total_amount: data.total_amount,
+        count: data.count,
+        daily_avg: data.daily_avg,
+        month_over_month_change: data.month_over_month_change,
+        loading: false
+      })
+    } catch (err) {
+      console.error('加载概览失败', err)
+      setSummary(prev => ({ ...prev, loading: false }))
+    }
+  }
+  
+  if (summary.loading) {
+    return (
+      <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl p-4 text-white">
+        <div className="animate-pulse">
+          <div className="text-sm opacity-80">{currentMonth}</div>
+          <div className="text-3xl font-bold mt-1">--</div>
+          <div className="text-sm opacity-80 mt-1">加载中...</div>
+        </div>
+      </div>
+    )
+  }
+  
   return (
     <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl p-4 text-white">
-      <div className="text-sm opacity-80">{currentMonth}</div>
-      <div className="text-3xl font-bold mt-1">¥{summary.total.toFixed(2)}</div>
-      <div className="text-sm opacity-80 mt-1">共 {summary.count} 笔支出</div>
+      <div className="flex justify-between items-start">
+        <div className="text-sm opacity-80">{currentMonth}</div>
+        {summary.month_over_month_change !== 0 && (
+          <div className={`text-xs px-2 py-1 rounded-full ${
+            summary.month_over_month_change > 0 ? 'bg-red-400' : 'bg-green-400'
+          }`}>
+            {summary.month_over_month_change > 0 ? '↑' : '↓'} {Math.abs(summary.month_over_month_change).toFixed(1)}%
+          </div>
+        )}
+      </div>
+      <div className="text-3xl font-bold mt-1">¥{summary.total_amount.toFixed(2)}</div>
+      <div className="flex justify-between mt-2 text-sm opacity-80">
+        <span>共 {summary.count} 笔支出</span>
+        <span>日均 ¥{summary.daily_avg.toFixed(2)}</span>
+      </div>
     </div>
   )
 }

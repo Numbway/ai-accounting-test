@@ -378,6 +378,208 @@ def import_csv(request: ImportRequest, db: Session = Depends(get_db)):
     return results
 
 
+# ========== 月度概览 API ==========
+
+@app.get("/api/summary/current")
+def get_current_month_summary(db: Session = Depends(get_db)):
+    """获取当前月度概览"""
+    now = datetime.now()
+    start_date = date(now.year, now.month, 1)
+    # 下月第一天
+    if now.month == 12:
+        end_date = date(now.year + 1, 1, 1)
+    else:
+        end_date = date(now.year, now.month + 1, 1)
+    
+    # 查询本月支出
+    expenses = crud.get_expenses(
+        db,
+        start_date=start_date,
+        end_date=end_date,
+        limit=10000
+    )
+    
+    total_amount = sum(e.amount for e in expenses)
+    count = len(expenses)
+    
+    # 计算日均支出
+    days_passed = now.day
+    daily_avg = total_amount / days_passed if days_passed > 0 else 0
+    
+    # 与上月对比
+    if now.month == 1:
+        last_month_start = date(now.year - 1, 12, 1)
+        last_month_end = date(now.year, 1, 1)
+    else:
+        last_month_start = date(now.year, now.month - 1, 1)
+        last_month_end = date(now.year, now.month, 1)
+    
+    last_month_expenses = crud.get_expenses(
+        db,
+        start_date=last_month_start,
+        end_date=last_month_end,
+        limit=10000
+    )
+    last_month_total = sum(e.amount for e in last_month_expenses)
+    
+    month_over_month = 0
+    if last_month_total > 0:
+        month_over_month = ((total_amount - last_month_total) / last_month_total) * 100
+    
+    return {
+        "year": now.year,
+        "month": now.month,
+        "total_amount": total_amount,
+        "count": count,
+        "daily_avg": daily_avg,
+        "last_month_total": last_month_total,
+        "month_over_month_change": round(month_over_month, 1),
+    }
+
+
+# ========== 智能分析 API ==========
+
+@app.get("/api/analysis/smart")
+def get_smart_analysis(db: Session = Depends(get_db)):
+    """获取智能分析报告"""
+    now = datetime.now()
+    
+    # 获取最近30天的支出
+    last_30_days_start = now - __import__('datetime').timedelta(days=30)
+    recent_expenses = crud.get_expenses(
+        db,
+        start_date=last_30_days_start.date(),
+        end_date=now.date(),
+        limit=10000
+    )
+    
+    if not recent_expenses:
+        return {
+            "abnormal_expenses": [],
+            "recurring_expenses": [],
+            "suggestions": [],
+            "category_analysis": []
+        }
+    
+    # 1. 异常支出检测（超过日均3倍或单笔超过500元）
+    daily_totals = {}
+    for e in recent_expenses:
+        day = e.date.strftime("%Y-%m-%d")
+        daily_totals[day] = daily_totals.get(day, 0) + e.amount
+    
+    avg_daily = sum(daily_totals.values()) / len(daily_totals) if daily_totals else 0
+    
+    abnormal_expenses = []
+    for day, total in daily_totals.items():
+        if total > avg_daily * 3 and total > 100:
+            abnormal_expenses.append({
+                "date": day,
+                "amount": total,
+                "reason": f"当日支出 ¥{total:.2f}，超过日均 ¥{avg_daily:.2f} 的 3 倍"
+            })
+    
+    # 单笔大额支出
+    for e in recent_expenses:
+        if e.amount >= 500:
+            abnormal_expenses.append({
+                "date": e.date.strftime("%Y-%m-%d"),
+                "amount": e.amount,
+                "category": e.category_full or e.category,
+                "detail": e.detail,
+                "reason": f"单笔大额支出"
+            })
+    
+    # 去重并排序
+    seen = set()
+    abnormal_expenses_unique = []
+    for item in abnormal_expenses:
+        key = (item["date"], item["amount"])
+        if key not in seen:
+            seen.add(key)
+            abnormal_expenses_unique.append(item)
+    abnormal_expenses = sorted(abnormal_expenses_unique, key=lambda x: x["amount"], reverse=True)[:5]
+    
+    # 2. 重复支出识别（相同商户或详情，每月出现）
+    from collections import Counter
+    
+    merchant_counts = Counter([e.merchant for e in recent_expenses if e.merchant])
+    detail_counts = Counter([e.detail for e in recent_expenses if e.detail])
+    
+    recurring_expenses = []
+    
+    # 识别可能的订阅/固定支出
+    for merchant, count in merchant_counts.most_common(5):
+        if count >= 2:
+            amounts = [e.amount for e in recent_expenses if e.merchant == merchant]
+            avg_amount = sum(amounts) / len(amounts)
+            recurring_expenses.append({
+                "type": "merchant",
+                "name": merchant,
+                "count": count,
+                "avg_amount": round(avg_amount, 2),
+                "suggestion": f"可能是固定支出，月均约 ¥{avg_amount:.2f}"
+            })
+    
+    # 3. 消费建议
+    suggestions = []
+    
+    # 按类别统计
+    category_totals = {}
+    for e in recent_expenses:
+        cat = e.category_full or e.category
+        if cat not in category_totals:
+            category_totals[cat] = {"total": 0, "count": 0}
+        category_totals[cat]["total"] += e.amount
+        category_totals[cat]["count"] += 1
+    
+    # 找出消费最多的类别
+    if category_totals:
+        top_category = max(category_totals.items(), key=lambda x: x[1]["total"])
+        suggestions.append({
+            "type": "top_category",
+            "message": f"最近30天「{top_category[0]}」支出最多，共 ¥{top_category[1]['total']:.2f}",
+            "suggestion": "建议关注该类别的消费情况"
+        })
+    
+    # 日均消费建议
+    total_30d = sum(e.amount for e in recent_expenses)
+    daily_avg_30d = total_30d / 30
+    if daily_avg_30d > 100:
+        suggestions.append({
+            "type": "daily_avg",
+            "message": f"近30天日均支出 ¥{daily_avg_30d:.2f}",
+            "suggestion": "日均消费较高，建议适当控制非必要支出"
+        })
+    elif daily_avg_30d < 30:
+        suggestions.append({
+            "type": "daily_avg",
+            "message": f"近30天日均支出 ¥{daily_avg_30d:.2f}",
+            "suggestion": "消费控制很好，继续保持！"
+        })
+    
+    # 4. 类别分析
+    category_analysis = []
+    for cat, data in sorted(category_totals.items(), key=lambda x: x[1]["total"], reverse=True):
+        category_analysis.append({
+            "category": cat,
+            "total": data["total"],
+            "count": data["count"],
+            "avg_per_transaction": round(data["total"] / data["count"], 2) if data["count"] > 0 else 0
+        })
+    
+    return {
+        "abnormal_expenses": abnormal_expenses,
+        "recurring_expenses": recurring_expenses,
+        "suggestions": suggestions,
+        "category_analysis": category_analysis[:5],
+        "summary": {
+            "total_30d": total_30d,
+            "daily_avg_30d": round(daily_avg_30d, 2),
+            "transaction_count": len(recent_expenses)
+        }
+    }
+
+
 # ========== 健康检查 ==========
 
 @app.get("/api/health")
