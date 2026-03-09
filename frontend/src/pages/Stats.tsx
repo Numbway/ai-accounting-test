@@ -392,8 +392,6 @@ export default function Stats() {
 
       {/* 智能分析内容 */}
       {activeTab === 'analysis' && <SmartAnalysis />}
-        </div>
-      )}
     </div>
   )
 }
