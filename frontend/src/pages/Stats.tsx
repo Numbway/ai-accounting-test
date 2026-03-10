@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import api from '../lib/axios'
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip,
-  LineChart, Line, XAxis, YAxis, CartesianGrid, BarChart, Bar
+  LineChart, Line, XAxis, YAxis, CartesianGrid
 } from 'recharts'
 import SmartAnalysis from '../components/SmartAnalysis'
 
@@ -18,6 +18,8 @@ interface MonthlyStats {
   year: number
   month: number
   total_amount: number
+  total_income: number
+  net_amount: number
   count: number
   daily_avg: number
   categories: CategoryStat[]
@@ -40,7 +42,10 @@ interface BudgetStatus {
 
 type TimeRange = 'month' | '3months' | '6months' | 'year'
 
-const COLORS = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8', '#B8B8B8']
+// 支出配色（暖色系）
+const EXPENSE_COLORS = ['#EF4444', '#F97316', '#F59E0B', '#EAB308', '#84CC16', '#10B981', '#06B6D4', '#8B5CF6']
+// 收入配色（蓝色系）
+const INCOME_COLORS = ['#3B82F6', '#0EA5E9', '#06B6D4', '#14B8A6', '#10B981']
 
 export default function Stats() {
   const now = new Date()
@@ -315,7 +320,7 @@ export default function Stats() {
         <>
           {/* 饼图 */}
           <div className="bg-white rounded-xl p-4 shadow-sm">
-            <h3 className="font-medium mb-4">支出分类</h3>
+            <h3 className="font-medium mb-4 text-red-600">🥧 支出分类占比</h3>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -329,7 +334,7 @@ export default function Stats() {
                     dataKey="value"
                   >
                     {chartData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      <Cell key={`cell-${index}`} fill={EXPENSE_COLORS[index % EXPENSE_COLORS.length]} />
                     ))}
                   </Pie>
                   <Tooltip formatter={(value: number) => `¥${value.toFixed(2)}`} />
@@ -346,33 +351,70 @@ export default function Stats() {
 
           {/* 分类明细 */}
           <div className="bg-white rounded-xl p-4 shadow-sm">
-            <h3 className="font-medium mb-4">分类明细</h3>
+            <h3 className="font-medium mb-4 text-red-600">📋 支出分类明细</h3>
             <div className="space-y-3">
-              {stats.categories.map((cat, idx) => (
+              {stats.categories.filter(cat => cat.category !== 'income').map((cat, idx) => (
                 <div key={cat.category} className="flex items-center gap-3">
                   <div
                     className="w-3 h-3 rounded-full"
-                    style={{ backgroundColor: COLORS[idx % COLORS.length] }}
+                    style={{ backgroundColor: EXPENSE_COLORS[idx % EXPENSE_COLORS.length] }}
                   />
                   <div className="flex-1">
                     <div className="font-medium">{cat.category_full}</div>
                     <div className="text-xs text-gray-500">{cat.count} 笔</div>
                   </div>
                   <div className="text-right">
-                    <div className="font-medium">¥{cat.total_amount.toFixed(2)}</div>
+                    <div className="font-medium text-red-600">¥{cat.total_amount.toFixed(2)}</div>
                     <div className="text-xs text-gray-500">{cat.percentage.toFixed(1)}%</div>
                   </div>
                 </div>
               ))}
             </div>
           </div>
+
+          {/* 收入统计 */}
+          {stats.total_income > 0 && (
+            <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl p-4 shadow-sm text-white">
+              <h3 className="font-medium mb-3 flex items-center gap-2">
+                <span>💰</span> 收入统计
+              </h3>
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <div className="text-sm opacity-80">本月总收入</div>
+                  <div className="text-2xl font-bold">+¥{stats.total_income.toFixed(2)}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm opacity-80">净结余</div>
+                  <div className={`text-xl font-bold ${stats.net_amount >= 0 ? 'text-green-300' : 'text-red-300'}`}>
+                    {stats.net_amount >= 0 ? '+' : ''}¥{stats.net_amount.toFixed(2)}
+                  </div>
+                </div>
+              </div>
+              <div className="pt-3 border-t border-white/20">
+                <div className="text-sm opacity-80 mb-2">收支比</div>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 bg-white/20 rounded-full h-2">
+                    <div 
+                      className="bg-white rounded-full h-2 transition-all"
+                      style={{ 
+                        width: `${Math.min((stats.total_amount / (stats.total_amount + stats.total_income)) * 100, 100)}%` 
+                      }}
+                    />
+                  </div>
+                  <span className="text-xs">
+                    支出 {(stats.total_amount / (stats.total_amount + stats.total_income) * 100).toFixed(1)}%
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
 
       {/* 趋势内容 */}
       {activeTab === 'trend' && (
         <div className="bg-white rounded-xl p-4 shadow-sm">
-          <h3 className="font-medium mb-4">支出趋势</h3>
+          <h3 className="font-medium mb-4 text-red-600">📈 支出趋势</h3>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={dailyData}>
@@ -393,9 +435,9 @@ export default function Stats() {
                 <Line
                   type="monotone"
                   dataKey="amount"
-                  stroke="#3B82F6"
+                  stroke="#EF4444"
                   strokeWidth={2}
-                  dot={{ r: 3, fill: '#3B82F6' }}
+                  dot={{ r: 3, fill: '#EF4444' }}
                   activeDot={{ r: 5 }}
                 />
               </LineChart>

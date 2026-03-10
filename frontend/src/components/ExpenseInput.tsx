@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import api from '../lib/axios'
+import VoiceInput from './VoiceInput'
 
 interface ParseResult {
   date: string
@@ -25,6 +26,7 @@ export default function ExpenseInput({ onSuccess }: ExpenseInputProps) {
   const [error, setError] = useState<string | null>(null)
   const [inputMode, setInputMode] = useState<'text' | 'image'>('text')
   const [recordType, setRecordType] = useState<'expense' | 'income'>('expense')
+  const [voiceError, setVoiceError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 切换输入模式
@@ -44,6 +46,22 @@ export default function ExpenseInput({ onSuccess }: ExpenseInputProps) {
     setRecordType(type)
     setResult(null)
     setError(null)
+    setVoiceError(null)
+  }
+
+  // 处理语音输入结果
+  const handleVoiceResult = (voiceText: string) => {
+    setText(voiceText)
+    setVoiceError(null)
+    // 自动触发解析
+    setTimeout(() => {
+      handleTextSubmit()
+    }, 100)
+  }
+
+  // 处理语音错误
+  const handleVoiceError = (error: string) => {
+    setVoiceError(error)
   }
 
   // 文本解析
@@ -174,6 +192,7 @@ export default function ExpenseInput({ onSuccess }: ExpenseInputProps) {
     setText('')
     setResult(null)
     setError(null)
+    setVoiceError(null)
     setImage(null)
     setPreview(null)
     setInputMode('text')
@@ -254,25 +273,42 @@ export default function ExpenseInput({ onSuccess }: ExpenseInputProps) {
 
       {/* 文字输入模式 */}
       {inputMode === 'text' && (
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleTextSubmit()}
-            placeholder={recordType === 'expense' ? "花了20买了一斤肉" : "工资收入5000元"}
-            className="flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500"
-          />
-          <button
-            type="button"
-            onClick={handleTextSubmit}
-            disabled={loading || !text.trim()}
-            className={`px-4 py-3 text-white rounded-lg font-medium disabled:bg-gray-300 disabled:cursor-not-allowed ${
-              recordType === 'income' ? 'bg-green-500' : 'bg-blue-500'
-            }`}
-          >
-            解析
-          </button>
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <div className="flex-1 relative">
+              <input
+                type="text"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleTextSubmit()}
+                placeholder={recordType === 'expense' ? "花了20买了一斤肉 或 点击麦克风语音输入" : "工资收入5000元 或 点击麦克风语音输入"}
+                className="w-full px-4 py-3 pr-12 border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500"
+              />
+              <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                <VoiceInput
+                  onResult={handleVoiceResult}
+                  onError={handleVoiceError}
+                  disabled={loading}
+                />
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleTextSubmit}
+              disabled={loading || !text.trim()}
+              className={`px-4 py-3 text-white rounded-lg font-medium disabled:bg-gray-300 disabled:cursor-not-allowed ${
+                recordType === 'income' ? 'bg-green-500' : 'bg-blue-500'
+              }`}
+            >
+              解析
+            </button>
+          </div>
+          {/* 语音错误提示 */}
+          {voiceError && (
+            <div className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg">
+              ⚠️ {voiceError}
+            </div>
+          )}
         </div>
       )}
 
@@ -354,10 +390,10 @@ export default function ExpenseInput({ onSuccess }: ExpenseInputProps) {
 
       {/* 解析结果 */}
       {result && !loading && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+        <div className={`rounded-lg p-4 border ${recordType === 'income' ? 'bg-blue-50 border-blue-200' : 'bg-red-50 border-red-200'}`}>
           <div className="flex items-center gap-2 mb-3">
-            <span className="text-green-600 text-lg">✓</span>
-            <span className="font-medium text-green-700">已识别</span>
+            <span className={`text-lg ${recordType === 'income' ? 'text-blue-600' : 'text-red-600'}`}>✓</span>
+            <span className={`font-medium ${recordType === 'income' ? 'text-blue-700' : 'text-red-700'}`}>已识别</span>
             <span className="text-2xl ml-auto">
               {getCategoryEmoji(result.category)}
             </span>
@@ -370,7 +406,9 @@ export default function ExpenseInput({ onSuccess }: ExpenseInputProps) {
             </div>
             <div className="flex justify-between">
               <span className="text-gray-500">金额</span>
-              <span className="font-medium text-red-600">¥{result.amount.toFixed(2)}</span>
+              <span className={`font-medium ${recordType === 'income' ? 'text-blue-600' : 'text-red-600'}`}>
+                {recordType === 'income' ? '+' : '-'}¥{result.amount.toFixed(2)}
+              </span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-500">详情</span>
@@ -392,7 +430,11 @@ export default function ExpenseInput({ onSuccess }: ExpenseInputProps) {
             <button
               type="button"
               onClick={handleConfirm}
-              className="flex-1 py-2 bg-green-500 text-white rounded-lg font-medium hover:bg-green-600"
+              className={`flex-1 py-2 text-white rounded-lg font-medium ${
+                recordType === 'income' 
+                  ? 'bg-blue-500 hover:bg-blue-600' 
+                  : 'bg-red-500 hover:bg-red-600'
+              }`}
             >
               确认保存
             </button>

@@ -426,6 +426,7 @@ def import_csv(
             try:
                 # 获取映射的字段值
                 date_str = row.get(mapping.get('date', ''), '').strip()
+                type_str = row.get(mapping.get('type', ''), '').strip()  # 收支类型
                 amount_str = row.get(mapping.get('amount', ''), '').strip()
                 category = row.get(mapping.get('category', ''), '').strip()
                 detail = row.get(mapping.get('detail', ''), '').strip()
@@ -433,7 +434,7 @@ def import_csv(
                 merchant = row.get(mapping.get('merchant', ''), '').strip()
                 
                 # 验证必填字段
-                if not date_str or not amount_str or not category:
+                if not date_str or not amount_str:
                     results["failed"] += 1
                     results["errors"].append(f"第 {idx} 行: 缺少必填字段")
                     continue
@@ -452,8 +453,8 @@ def import_csv(
                     results["errors"].append(f"第 {idx} 行: 日期格式错误 '{date_str}'")
                     continue
                 
-                # 解析金额
-                amount_str_clean = amount_str.replace(',', '').replace('¥', '').replace('$', '').strip()
+                # 解析金额（处理正负数）
+                amount_str_clean = amount_str.replace(',', '').replace('¥', '').replace('$', '').replace('+', '').strip()
                 try:
                     amount = float(amount_str_clean)
                 except ValueError:
@@ -461,24 +462,48 @@ def import_csv(
                     results["errors"].append(f"第 {idx} 行: 金额格式错误 '{amount_str}'")
                     continue
                 
-                # 查找或创建类别
-                category_obj = crud.get_category_by_name(db, category)
-                if not category_obj:
-                    # 使用默认类别映射
-                    category_mapping = {
-                        '餐饮': 'food', '食物': 'food', '吃饭': 'food',
-                        '交通': 'transport', '出行': 'transport',
-                        '购物': 'shopping', '买东西': 'shopping',
-                        '居住': 'living', '房租': 'living', '住宿': 'living',
-                        '医疗': 'medical', '医药': 'medical', '看病': 'medical',
-                        '娱乐': 'entertainment', '休闲': 'entertainment',
-                        '收入': 'income', '工资': 'income',
-                    }
-                    category_key = category_mapping.get(category, 'other')
-                    category_obj = crud.get_category_by_name(db, category_key)
+                # 根据收支类型和金额判断收入/支出
+                is_income = False
+                if type_str:
+                    # 根据收支类型字段判断
+                    is_income = '收入' in type_str or 'income' in type_str.lower()
+                elif amount < 0:
+                    # 根据金额正负判断（负数通常是支出）
+                    is_income = False
+                elif amount > 0 and category in ['收入', '工资', '红包', 'income']:
+                    # 正数且类别是收入相关
+                    is_income = True
                 
-                category_key = category_obj.name if category_obj else 'other'
-                category_full = category_obj.name_full if category_obj else category
+                # 取绝对值
+                amount = abs(amount)
+                
+                # 确定类别
+                if is_income:
+                    category_key = 'income'
+                    category_full = '收入'
+                else:
+                    # 查找或创建类别
+                    category_obj = crud.get_category_by_name(db, category)
+                    if not category_obj:
+                        # 使用默认类别映射
+                        category_mapping = {
+                            '餐饮': 'food', '食物': 'food', '吃饭': 'food',
+                            '交通': 'transport', '出行': 'transport',
+                            '购物': 'shopping', '买东西': 'shopping',
+                            '居住': 'living', '房租': 'living', '住宿': 'living',
+                            '医疗': 'medical', '医药': 'medical', '看病': 'medical',
+                            '娱乐': 'entertainment', '休闲': 'entertainment',
+                            '收入': 'income', '工资': 'income', '红包': 'income',
+                            '快递': 'shopping', '蔬菜': 'food', '水果': 'food',
+                            '饮料': 'food', '电影': 'entertainment',
+                            '软件': 'shopping', '游戏': 'entertainment',
+                            '礼品': 'shopping',
+                        }
+                        category_key = category_mapping.get(category, 'other')
+                        category_obj = crud.get_category_by_name(db, category_key)
+                    
+                    category_key = category_obj.name if category_obj else 'other'
+                    category_full = category_obj.name_full if category_obj else category
                 
                 # 标准化支付方式
                 payment_map = {

@@ -236,8 +236,8 @@ export default function ExpenseItem({ expense, onUpdate }: ExpenseItemProps) {
           {expense.date.split('T')[0]}
         </div>
       </div>
-      <div className="text-red-600 font-medium">
-        -¥{expense.amount.toFixed(2)}
+      <div className={`font-medium ${expense.category === 'income' ? 'text-blue-600' : 'text-red-600'}`}>
+        {expense.category === 'income' ? '+' : '-'}¥{expense.amount.toFixed(2)}
       </div>
       
       {/* 操作按钮 */}

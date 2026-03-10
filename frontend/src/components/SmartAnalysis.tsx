@@ -36,9 +36,12 @@ interface AnalysisData {
   suggestions: Suggestion[]
   category_analysis: CategoryAnalysis[]
   summary: {
-    total_30d: number
-    daily_avg_30d: number
-    transaction_count: number
+    total_income_30d: number
+    total_expense_30d: number
+    net_savings: number
+    daily_avg_expense: number
+    expense_count: number
+    income_count: number
   }
 }
 
@@ -71,7 +74,7 @@ export default function SmartAnalysis() {
     )
   }
 
-  if (!analysis || analysis.summary.transaction_count === 0) {
+  if (!analysis || (analysis.summary.expense_count === 0 && analysis.summary.income_count === 0)) {
     return (
       <div className="bg-white rounded-xl p-8 text-center text-gray-500">
         <div className="text-2xl mb-2">🤖</div>
@@ -116,16 +119,29 @@ export default function SmartAnalysis() {
         <>
           {/* 30天统计 */}
           <div className="bg-gradient-to-r from-purple-500 to-purple-600 rounded-xl p-6 text-white">
-            <div className="text-sm opacity-80">近30天支出</div>
-            <div className="text-3xl font-bold mt-2">¥{analysis.summary.total_30d.toFixed(2)}</div>
-            <div className="flex justify-around mt-4 text-sm">
+            <div className="text-sm opacity-80">近30天收支</div>
+            <div className="text-3xl font-bold mt-2">
+              {analysis.summary.net_savings >= 0 ? '+' : ''}¥{Math.abs(analysis.summary.net_savings).toFixed(2)}
+            </div>
+            <div className="text-sm opacity-80 mt-1">
+              {analysis.summary.net_savings >= 0 ? '净结余' : '净支出'}
+            </div>
+            <div className="flex justify-around mt-4 pt-4 border-t border-white/20 text-sm">
+              <div>
+                <div className="opacity-80">收入</div>
+                <div className="font-semibold text-green-300">+¥{analysis.summary.total_income_30d.toFixed(2)}</div>
+              </div>
+              <div>
+                <div className="opacity-80">支出</div>
+                <div className="font-semibold text-red-300">-¥{analysis.summary.total_expense_30d.toFixed(2)}</div>
+              </div>
               <div>
                 <div className="opacity-80">笔数</div>
-                <div className="font-semibold">{analysis.summary.transaction_count}</div>
+                <div className="font-semibold">{analysis.summary.expense_count + analysis.summary.income_count}</div>
               </div>
               <div>
                 <div className="opacity-80">日均</div>
-                <div className="font-semibold">¥{analysis.summary.daily_avg_30d.toFixed(2)}</div>
+                <div className="font-semibold">¥{analysis.summary.daily_avg_expense.toFixed(2)}</div>
               </div>
             </div>
           </div>
